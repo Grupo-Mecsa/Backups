@@ -68,6 +68,8 @@ public static class DependencyInjection
         services.Configure<DataProtectionTokenProviderOptions>(options => options.TokenLifespan = TimeSpan.FromHours(48));
         services.AddScoped<IUserAdministration, UserAdministration>();
         services.AddScoped<PasswordRecovery>();
+        services.Configure<RegistrationOptions>(configuration.GetSection(RegistrationOptions.SectionName));
+        services.AddScoped<SelfRegistration>();
 
         // Secretos
         services.AddDataProtection()

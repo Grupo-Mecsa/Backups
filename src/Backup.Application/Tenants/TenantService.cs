@@ -42,6 +42,7 @@ public sealed class TenantService(ITenantRepository repository, ICurrentUser use
 
             tenant.Name = name;
             tenant.Enabled = enabled;
+            tenant.PendingApproval &= !enabled; // habilitarlo equivale a aprobarlo
             await repository.UpdateAsync(tenant, cancellationToken);
             return (true, null, tenant.Id);
         }

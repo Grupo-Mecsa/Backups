@@ -25,6 +25,8 @@ services:
       Smtp__FromName: ${SMTP_FROM_NAME:-BackupHub}
       # Bot de Telegram para alertas (token de @BotFather; opcional)
       Telegram__BotToken: ${TELEGRAM_BOT_TOKEN:-}
+      # Autorregistro: Enabled (el primer usuario de una organización se aprueba solo; unirse a una existente requiere aprobación) | Disabled
+      Registration__Mode: ${BACKUP_REGISTRATION:-Enabled}
       Notifications__Webhook__Url: ""       # Teams / Slack / n8n (opcional)
     volumes:
       - backup-data:/data                   # base SQLite + llaves de cifrado (¡respáldalo!)

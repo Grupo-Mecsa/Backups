@@ -471,6 +471,45 @@ public sealed class EndToEndTests : IAsyncLifetime
         await Eventually.TrueAsync(() => telegram.ListMineAsync().GetAwaiter().GetResult().Count == 0);
     }
 
+    [Fact]
+    public async Task Registration_FirstUserOfNewOrganizationIsApproved_JoiningExistingNeedsApproval()
+    {
+        await using var scope = _services.CreateAsyncScope();
+        var registration = scope.ServiceProvider.GetRequiredService<Infrastructure.Identity.SelfRegistration>();
+        var tenants = scope.ServiceProvider.GetRequiredService<ITenantRepository>();
+        Assert.Equal(RegistrationMode.Enabled, registration.Mode);
+
+        var (weak, _, _) = await registration.RegisterAsync("Acme", "Ana", "ana@acme.com", "123");
+        Assert.False(weak.Success);
+        Assert.Equal(1, (await tenants.ListAsync()).Count); // no deja tenants huérfanos
+
+        // Organización nueva: su primer usuario entra de inmediato como administrador.
+        var (ok, ana, canSignIn) = await registration.RegisterAsync("Acme", "Ana", "ana@acme.com", "Clave1234");
+        Assert.True(ok.Success, string.Join(" ", ok.Errors));
+        Assert.True(canSignIn);
+        Assert.False(ana!.PendingApproval);
+        Assert.True(await tenants.GetAsync(ana.TenantId) is { Enabled: true, PendingApproval: false });
+        var users = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<Infrastructure.Identity.ApplicationUser>>();
+        Assert.True(await users.IsInRoleAsync(ana, AppRoles.Admin));
+
+        // Organización existente (sin importar mayúsculas): lector pendiente y aviso a sus administradores.
+        var (joined, beto, betoCanSignIn) = await registration.RegisterAsync("acme", "Beto", "beto@acme.com", "Clave1234");
+        Assert.True(joined.Success, string.Join(" ", joined.Errors));
+        Assert.False(betoCanSignIn);
+        Assert.True(beto!.PendingApproval);
+        Assert.Equal(ana.TenantId, beto.TenantId);
+        Assert.True(await users.IsInRoleAsync(beto, AppRoles.Reader));
+        var (_, notice) = Assert.Single(_email.Sent);
+        Assert.Equal(["ana@acme.com"], notice.To);
+
+        // Un administrador de Acme aprueba; un pendiente no cuenta como administrador activo.
+        _user.TenantId = ana.TenantId;
+        var admin = _services.GetRequiredService<IUserAdministration>();
+        Assert.Contains(await admin.ListAsync(), u => u.Email == "beto@acme.com" && u.IsPending);
+        Assert.True((await admin.ApproveAsync(beto.Id)).Success);
+        Assert.Contains(await admin.ListAsync(), u => u.Email == "beto@acme.com" && !u.IsPending);
+    }
+
     private static ProviderBinding Binding(string key, params (string Key, string? Value)[] settings)
     {
         var binding = new ProviderBinding { ProviderKey = key };

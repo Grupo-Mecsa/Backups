@@ -12,6 +12,8 @@ public sealed class AccountLinks(NavigationManager navigation, IConfiguration co
     public string SetPassword(string userId, string token, bool invitation) =>
         $"{BaseUrl}account/reset-password?user={Uri.EscapeDataString(userId)}&code={Uri.EscapeDataString(token)}{(invitation ? "&invite=1" : null)}";
 
+    public string Absolute(string path) => BaseUrl + path.TrimStart('/');
+
     private string BaseUrl
     {
         get

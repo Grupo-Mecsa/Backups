@@ -15,6 +15,8 @@ services:
       Bootstrap__AdminPassword: ${BACKUP_ADMIN_PASSWORD:-}
       Bootstrap__TenantName: ${BACKUP_TENANT_NAME:-Principal}
       Backup__PublicUrl: ${BACKUP_PUBLIC_URL:-}    # URL pública (enlaces de invitación y recuperación de contraseña)
+      # Autorregistro: Enabled (el primer usuario de una organización se aprueba solo; unirse a una existente requiere aprobación) | Disabled
+      Registration__Mode: ${BACKUP_REGISTRATION:-Enabled}
       # SMTP de la plataforma: invitaciones, recuperación de contraseña y alertas de tenants sin SMTP propio (opcional)
       Smtp__Host: ${SMTP_HOST:-}
       Smtp__Port: ${SMTP_PORT:-587}

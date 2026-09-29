@@ -4,6 +4,7 @@
 @using Backup.Domain.Tenants
 @inject TenantService TenantService
 @inject IUserAdministration UserAdmin
+@inject Backup.Infrastructure.Identity.SelfRegistration Registration
 @inject CurrentUser Me
 @inject ToastService Toasts
 
@@ -34,13 +35,22 @@
                             {
                                 <Badge Tone="Tone.Accent" Icon="check">Actual</Badge>
                             }
+                            else if (tenant.PendingApproval)
+                            {
+                                <Badge Tone="Tone.Warning" Icon="clock">Pendiente</Badge>
+                            }
                             else if (!tenant.Enabled)
                             {
                                 <Badge Tone="Tone.Danger">Deshabilitado</Badge>
                             }
                         </header>
                         <footer class="tenant-card__actions">
-                            @if (!isCurrent)
+                            @if (tenant.PendingApproval)
+                            {
+                                <Button Size="ButtonSize.Small" Icon="check" OnClick="() => Approve(tenant)">Aprobar</Button>
+                                <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="x" Class="btn--danger-ghost" OnClick="() => AskReject(tenant)">Rechazar</Button>
+                            }
+                            else if (!isCurrent)
                             {
                                 <form method="post" action="account/switch-tenant">
                                     <AntiforgeryToken />
@@ -59,6 +69,9 @@
         }
     </ChildContent>
 </PageTemplate>
+
+<ConfirmDialog @bind-Visible="_confirmReject" Danger Title="¿Rechazar registro?" ConfirmText="Rechazar"
+               Message="@($"Se eliminarán la organización {_pendingReject?.Name} y sus usuarios.")" OnConfirm="Reject" />
 
 <ModalDialog @bind-Visible="_editing" Title="@(_id is null ? "Nuevo tenant" : "Editar tenant")" Icon="share">
     <ChildContent>
@@ -116,8 +129,37 @@
     private string? _adminEmail;
     private string? _adminPassword;
     private bool _adminInvite = true;
+    private bool _confirmReject;
+    private Tenant? _pendingReject;
 
-    protected override async Task OnInitializedAsync() => _tenants = await TenantService.ListAsync();
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    /// <summary>Solicitudes pendientes primero.</summary>
+    private async Task LoadAsync() =>
+        _tenants = [.. (await TenantService.ListAsync()).OrderByDescending(t => t.PendingApproval)];
+
+    private async Task Approve(Tenant tenant)
+    {
+        await Registration.ApproveAsync(tenant.Id);
+        Toasts.Success("Registro aprobado", $"{tenant.Name} ya puede iniciar sesión.");
+        await LoadAsync();
+    }
+
+    private void AskReject(Tenant tenant)
+    {
+        _pendingReject = tenant;
+        _confirmReject = true;
+    }
+
+    private async Task Reject()
+    {
+        if (_pendingReject is { } tenant)
+        {
+            await Registration.RejectAsync(tenant.Id);
+            Toasts.Success("Registro rechazado", tenant.Name);
+            await LoadAsync();
+        }
+    }
 
     private void New()
     {
@@ -163,6 +205,6 @@
             }
         }
         _editing = false;
-        _tenants = await TenantService.ListAsync();
+        await LoadAsync();
     }
 }

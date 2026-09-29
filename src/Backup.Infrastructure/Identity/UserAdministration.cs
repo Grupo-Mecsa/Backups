@@ -167,6 +167,19 @@ internal sealed class UserOperations(
         return From(deleted);
     }
 
+    public async Task<UserOperationResult> ApproveAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        current.EnsureCanManage();
+        var (user, error) = await FindEditableAsync(userId);
+        if (user is null)
+        {
+            return error!;
+        }
+
+        user.PendingApproval = false;
+        return From(await users.UpdateAsync(user));
+    }
+
     public async Task<UserOperationResult> ChangeOwnPasswordAsync(string currentPassword, string newPassword, CancellationToken cancellationToken = default)
     {
         current.EnsureAuthenticated();
@@ -314,7 +327,7 @@ internal sealed class UserOperations(
 
         var admins = (await users.GetUsersInRoleAsync(AppRoles.Admin))
             .Concat(await users.GetUsersInRoleAsync(AppRoles.SuperAdmin))
-            .Where(u => u.TenantId == user.TenantId && u.Id != user.Id && !(u.LockoutEnd > timeProvider.GetUtcNow()));
+            .Where(u => u.TenantId == user.TenantId && u.Id != user.Id && !u.PendingApproval && !(u.LockoutEnd > timeProvider.GetUtcNow()));
         return !admins.Any();
     }
 
@@ -325,7 +338,8 @@ internal sealed class UserOperations(
         (await users.GetRolesAsync(user)).FirstOrDefault() ?? AppRoles.Reader,
         user.TenantId,
         user.LockoutEnd > timeProvider.GetUtcNow(),
-        user.LastLoginAt);
+        user.LastLoginAt,
+        user.PendingApproval);
 
     private static UserOperationResult From(IdentityResult result) =>
         result.Succeeded ? UserOperationResult.Ok : new UserOperationResult(false, [.. result.Errors.Select(e => IdentityMessages.Translate(e))]);
@@ -351,6 +365,9 @@ public sealed class UserAdministration(IServiceScopeFactory scopes, ICurrentUser
 
     public Task<UserOperationResult> ChangeOwnPasswordAsync(string currentPassword, string newPassword, CancellationToken cancellationToken = default) =>
         RunAsync(ops => ops.ChangeOwnPasswordAsync(currentPassword, newPassword, cancellationToken));
+
+    public Task<UserOperationResult> ApproveAsync(string userId, CancellationToken cancellationToken = default) =>
+        RunAsync(ops => ops.ApproveAsync(userId, cancellationToken));
 
     public Task<UserOperationResult> CreateInTenantAsync(Guid tenantId, UserEdit edit, CancellationToken cancellationToken = default) =>
         RunAsync(ops => ops.CreateInTenantAsync(tenantId, edit, cancellationToken));

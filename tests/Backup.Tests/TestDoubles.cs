@@ -43,6 +43,8 @@ public sealed class TestLinks : IAccountLinks
 {
     public string SetPassword(string userId, string token, bool invitation) =>
         $"https://backup.test/account/reset-password?user={Uri.EscapeDataString(userId)}&code={Uri.EscapeDataString(token)}{(invitation ? "&invite=1" : null)}";
+
+    public string Absolute(string path) => "https://backup.test/" + path.TrimStart('/');
 }
 
 public static class Eventually

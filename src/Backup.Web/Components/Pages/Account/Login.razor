@@ -11,6 +11,7 @@
 @inject ITenantRepository Tenants
 @inject NavigationManager Navigation
 @inject TimeProvider Time
+@inject Microsoft.Extensions.Options.IOptionsMonitor<RegistrationOptions> Registration
 
 <PageTitle>Iniciar sesión · BackupHub</PageTitle>
 
@@ -43,6 +44,11 @@
     </button>
 </EditForm>
 
+@if (Registration.CurrentValue.Mode != RegistrationMode.Disabled)
+{
+    <p class="auth__footer">¿No tienes cuenta? <a class="auth__link" href="account/register">Regístrate</a></p>
+}
+
 @code {
     private string? _error;
 
@@ -55,10 +61,30 @@
     {
         var input = Input!;
         var user = await Users.FindByEmailAsync(input.Email.Trim());
-        if (user is not null && !await Users.IsInRoleAsync(user, AppRoles.SuperAdmin)
-            && await Tenants.GetAsync(user.TenantId) is { Enabled: false })
+        if (user is { PendingApproval: true })
         {
-            _error = "Tu organización está deshabilitada. Contacta al administrador.";
+            // Solo se revela el estado si la contraseña es correcta (los fallos cuentan para el bloqueo).
+            _error = (await SignIn.CheckPasswordSignInAsync(user, input.Password, lockoutOnFailure: true)).Succeeded
+                ? "Tu solicitud para unirte a la organización está pendiente. Podrás entrar cuando un administrador la apruebe."
+                : "Correo o contraseña incorrectos.";
+            return;
+        }
+
+        if (user is not null && !await Users.IsInRoleAsync(user, AppRoles.SuperAdmin)
+            && await Tenants.GetAsync(user.TenantId) is { Enabled: false } tenant)
+        {
+            // Solo se revela el estado si la contraseña es correcta (los fallos cuentan para el bloqueo).
+            if ((await SignIn.CheckPasswordSignInAsync(user, input.Password, lockoutOnFailure: true)).Succeeded)
+            {
+                _error = tenant.PendingApproval
+                    ? "Tu registro está pendiente de aprobación. Podrás entrar cuando un administrador lo apruebe."
+                    : "Tu organización está deshabilitada. Contacta al administrador.";
+            }
+            else
+            {
+                _error = "Correo o contraseña incorrectos.";
+            }
+
             return;
         }
 

@@ -60,7 +60,11 @@
                                     </td>
                                     <td><Badge Tone="@(user.Role == AppRoles.Reader ? Tone.Neutral : Tone.Accent)" Icon="@(user.Role == AppRoles.Reader ? "user" : "shield")">@AppRoles.Label(user.Role)</Badge></td>
                                     <td>
-                                        @if (user.IsLocked)
+                                        @if (user.IsPending)
+                                        {
+                                            <Badge Tone="Tone.Warning" Icon="clock">Pendiente</Badge>
+                                        }
+                                        else if (user.IsLocked)
                                         {
                                             <Badge Tone="Tone.Danger" Icon="lock">Bloqueado</Badge>
                                         }
@@ -71,7 +75,12 @@
                                     </td>
                                     <td class="muted">@Display.Relative(user.LastLoginAt)</td>
                                     <td class="table__actions">
-                                        @if (CanEdit(user))
+                                        @if (user.IsPending)
+                                        {
+                                            <Button Size="ButtonSize.Small" Icon="check" OnClick="() => Approve(user)">Aprobar</Button>
+                                            <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="x" Class="btn--danger-ghost" OnClick="() => AskDelete(user)">Rechazar</Button>
+                                        }
+                                        else if (CanEdit(user))
                                         {
                                             <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="edit" IconOnly Title="Editar" AriaLabel="Editar" OnClick="() => Edit(user)" />
                                             @if (user.Id != Me.UserId)
@@ -155,10 +164,11 @@
     private IEnumerable<SelectOption> RoleOptions =>
         (Me.IsSuperAdmin ? AppRoles.All : AppRoles.TenantAssignable).Select(r => new SelectOption(r, AppRoles.Label(r)));
 
-    private IEnumerable<UserSummary> Filtered => string.IsNullOrWhiteSpace(_search)
+    /// <summary>Solicitudes pendientes primero.</summary>
+    private IEnumerable<UserSummary> Filtered => (string.IsNullOrWhiteSpace(_search)
         ? _users ?? []
         : (_users ?? []).Where(u => u.Email.Contains(_search, StringComparison.CurrentCultureIgnoreCase)
-            || u.DisplayName.Contains(_search, StringComparison.CurrentCultureIgnoreCase));
+            || u.DisplayName.Contains(_search, StringComparison.CurrentCultureIgnoreCase))).OrderByDescending(u => u.IsPending);
 
     protected override async Task OnInitializedAsync()
     {
@@ -221,6 +231,20 @@
         else
         {
             Toasts.Error("No se pudo actualizar", string.Join(" ", result.Errors));
+        }
+    }
+
+    private async Task Approve(UserSummary user)
+    {
+        var result = await UserAdmin.ApproveAsync(user.Id);
+        if (result.Success)
+        {
+            Toasts.Success("Solicitud aprobada", $"{user.Email} ya puede iniciar sesión como lector.");
+            _users = await UserAdmin.ListAsync();
+        }
+        else
+        {
+            Toasts.Error("No se pudo aprobar", string.Join(" ", result.Errors));
         }
     }
 

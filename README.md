@@ -149,6 +149,12 @@ Solo se aplican si la base no tiene usuarios.
 | `Bootstrap__AdminEmail` | `admin@backup.local` | Correo del super administrador inicial. |
 | `Bootstrap__AdminPassword` | — | Si queda vacía se genera una y se escribe en el log. |
 
+### 📝 Registro
+
+| Variable | Por defecto | Descripción |
+|---|---|---|
+| `Registration__Mode` | `Enabled` | `Enabled`: cualquiera puede registrarse (ver [Registrarse](#registrarse)) · `Disabled`: solo los administradores crean cuentas. Los valores anteriores `Approval` y `Open` equivalen a `Enabled`. |
+
 ### 📧 SMTP de la plataforma <sub>(opcional)</sub>
 
 Servidor de correo del operador. Se usa para **invitaciones y recuperación de contraseña**, y para las **alertas** de los tenants que elijan "Usar el servidor de la plataforma".
@@ -200,6 +206,20 @@ Autenticación con ASP.NET Core Identity (cookie de 12 h con renovación). Cada 
 - Los usuarios de un tenant deshabilitado no pueden iniciar sesión (sus trabajos programados siguen ejecutándose).
 
 </details>
+
+### Registrarse
+
+En la pantalla de inicio de sesión, **¿No tienes cuenta? Regístrate** abre un formulario con organización, nombre, correo y contraseña. Lo que pasa depende de si la organización ya existe (el nombre se compara sin distinguir mayúsculas):
+
+| Caso | Resultado |
+|---|---|
+| 🆕 **Organización nueva** | Se crea el tenant y quien se registra es su **primer usuario**: queda aprobado automáticamente como **administrador** y entra de inmediato. |
+| 🏢 **Organización existente** | Se crea una **solicitud para unirse** como **lector**. Sus administradores reciben un correo (si hay SMTP) y la aprueban o rechazan en **Usuarios**. Hasta entonces, al iniciar sesión se le indica que está pendiente. |
+
+Nadie que se registre puede ver datos de otra organización sin que un administrador de ella lo apruebe.
+
+> [!CAUTION]
+> El administrador de una organización nueva puede crear orígenes de tipo **Carpeta local**, que leen el sistema de archivos del contenedor (incluido `/data`, con las llaves de cifrado). Si el servidor es accesible desde redes que no controlas, usa `Registration__Mode=Disabled`.
 
 ### Crear usuarios
 

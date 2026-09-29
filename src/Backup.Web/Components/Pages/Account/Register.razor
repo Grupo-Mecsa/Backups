@@ -1,0 +1,111 @@
+@page "/account/register"
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@layout AuthLayout
+@using System.ComponentModel.DataAnnotations
+@using Backup.Infrastructure.Identity
+@using Microsoft.AspNetCore.Identity
+@inject SelfRegistration Registration
+@inject SignInManager<ApplicationUser> SignIn
+@inject NavigationManager Navigation
+
+<PageTitle>Crear cuenta · BackupHub</PageTitle>
+
+<h1 class="auth__title">Crear cuenta</h1>
+<p class="auth__subtitle">Crea tu organización o pide unirte a una existente.</p>
+
+@if (Registration.Mode == RegistrationMode.Disabled)
+{
+    <div class="callout callout--info" role="status"><Icon Name="lock" Size="16" />
+        <span>El registro está deshabilitado. Pide a un administrador que te cree una cuenta.</span>
+    </div>
+}
+else if (_pendingMessage is not null)
+{
+    <div class="callout callout--success animate-in" role="status"><Icon Name="clock" Size="16" /> <span>@_pendingMessage</span></div>
+}
+else
+{
+    @if (_errors.Count > 0)
+    {
+        <div class="callout callout--danger animate-in" role="alert"><Icon Name="alert" Size="16" />
+            <ul class="plain-list">@foreach (var error in _errors) { <li>@error</li> }</ul>
+        </div>
+    }
+
+    <EditForm Model="Input" method="post" OnValidSubmit="RegisterAsync" FormName="register" class="auth__form">
+        <DataAnnotationsValidator />
+        <FormField Label="Organización" For="organization" Help="Si es nueva, serás su administrador. Si ya existe, sus administradores aprobarán tu acceso.">
+            <InputText id="organization" class="input" autocomplete="organization" placeholder="Mi empresa" @bind-Value="Input!.Organization" />
+            <ValidationMessage For="() => Input!.Organization" class="field__error" />
+        </FormField>
+        <FormField Label="Tu nombre" For="name">
+            <InputText id="name" class="input" autocomplete="name" placeholder="Nombre y apellido" @bind-Value="Input!.Name" />
+            <ValidationMessage For="() => Input!.Name" class="field__error" />
+        </FormField>
+        <FormField Label="Correo" For="email">
+            <InputText id="email" type="email" class="input" autocomplete="username" placeholder="tu@empresa.com" @bind-Value="Input!.Email" />
+            <ValidationMessage For="() => Input!.Email" class="field__error" />
+        </FormField>
+        <FormField Label="Contraseña" For="password" Help="Mínimo 8 caracteres, con mayúscula, minúscula y número.">
+            <InputText id="password" type="password" class="input" autocomplete="new-password" @bind-Value="Input!.Password" />
+            <ValidationMessage For="() => Input!.Password" class="field__error" />
+        </FormField>
+        <FormField Label="Confirmar contraseña" For="confirm">
+            <InputText id="confirm" type="password" class="input" autocomplete="new-password" @bind-Value="Input!.Confirm" />
+            <ValidationMessage For="() => Input!.Confirm" class="field__error" />
+        </FormField>
+        <button type="submit" class="btn btn--primary btn--lg auth__submit">
+            <span class="btn__label">Crear cuenta</span> <Icon Name="arrow-right" Size="16" />
+        </button>
+    </EditForm>
+}
+
+<p class="auth__footer">¿Ya tienes cuenta? <a class="auth__link" href="account/login">Inicia sesión</a></p>
+
+@code {
+    private IReadOnlyList<string> _errors = [];
+    private string? _pendingMessage;
+
+    [SupplyParameterFromForm] private RegisterModel? Input { get; set; }
+
+    protected override void OnInitialized() => Input ??= new();
+
+    private async Task RegisterAsync()
+    {
+        var input = Input!;
+        var (result, user, canSignIn) = await Registration.RegisterAsync(input.Organization, input.Name, input.Email, input.Password);
+        if (!result.Success)
+        {
+            _errors = result.Errors;
+            return;
+        }
+
+        if (canSignIn && user is not null)
+        {
+            await SignIn.SignInAsync(user, isPersistent: false);
+            Navigation.NavigateTo("/");
+            return;
+        }
+
+        _pendingMessage = result.Notice;
+    }
+
+    private sealed class RegisterModel
+    {
+        [Required(ErrorMessage = "Indica tu organización."), MaxLength(100)]
+        public string Organization { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Indica tu nombre."), MaxLength(100)]
+        public string Name { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Indica tu correo."), EmailAddress(ErrorMessage = "Correo no válido.")]
+        public string Email { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Indica una contraseña.")]
+        public string Password { get; set; } = string.Empty;
+
+        [Compare(nameof(Password), ErrorMessage = "La confirmación no coincide.")]
+        public string Confirm { get; set; } = string.Empty;
+    }
+}

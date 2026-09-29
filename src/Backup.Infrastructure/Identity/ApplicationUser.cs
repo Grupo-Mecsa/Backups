@@ -10,6 +10,9 @@ public sealed class ApplicationUser : IdentityUser
     public string DisplayName { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastLoginAt { get; set; }
+
+    /// <summary>Se registró pidiendo unirse a una organización existente y espera que un administrador la apruebe.</summary>
+    public bool PendingApproval { get; set; }
 }
 
 public static class AppClaims

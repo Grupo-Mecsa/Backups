@@ -84,6 +84,17 @@ public static class EmailTemplates
         validFor,
         "Si no la pediste, ignora este correo: tu contraseña actual sigue funcionando.");
 
+    public static EmailMessage RegistrationPending(IReadOnlyList<string> to, string organization, string name, string email, string link)
+    {
+        var subject = $"Solicitud para unirse a {organization}";
+        var body = $"{name} ({email}) se registró y pidió unirse a {organization}. Apruébala o recházala en Usuarios.";
+        var html = Layout("#d98a04", subject, $"""
+            <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#151827">{Encode(body)}</p>
+            <p style="margin:0"><a href="{Encode(link)}" style="display:inline-block;padding:12px 22px;background:#5b5bd6;color:#ffffff;border-radius:10px;font-size:14px;font-weight:600;text-decoration:none">Revisar solicitud</a></p>
+            """);
+        return new EmailMessage(to, subject, html, $"{body}\n\nRevísala en: {link}");
+    }
+
     private static EmailMessage AccountEmail(string to, string subject, string intro, string action, string link, TimeSpan validFor, string footnote)
     {
         var expiry = $"El enlace caduca en {(validFor.TotalHours >= 48 ? $"{(int)validFor.TotalDays} días" : $"{(int)validFor.TotalHours} horas")}.";
