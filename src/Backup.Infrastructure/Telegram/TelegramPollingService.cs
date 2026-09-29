@@ -48,6 +48,12 @@ public sealed partial class TelegramPollingService(
             {
                 break;
             }
+            catch (TelegramApiException ex) when (ex.ErrorCode == 401)
+            {
+                // Token inválido: reintentar seguido no sirve de nada.
+                LogInvalidToken();
+                await DelayAsync(TimeSpan.FromMinutes(10), stoppingToken);
+            }
             catch (TelegramApiException ex) when (ex.ErrorCode == 409)
             {
                 LogConflict(ex.Message);
@@ -117,6 +123,9 @@ public sealed partial class TelegramPollingService(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Bot de Telegram conectado: @{Username}")]
     private partial void LogConnected(string username);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Telegram rechazó el token del bot (Telegram__BotToken). Revísalo con @BotFather; se reintentará en 10 minutos.")]
+    private partial void LogInvalidToken();
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Telegram rechazó getUpdates ({Reason}). ¿El bot tiene un webhook o hay otra instancia usando el mismo token?")]
     private partial void LogConflict(string reason);

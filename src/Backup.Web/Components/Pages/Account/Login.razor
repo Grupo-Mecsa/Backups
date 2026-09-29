@@ -25,16 +25,16 @@
 <EditForm Model="Input" method="post" OnValidSubmit="LoginAsync" FormName="login" class="auth__form">
     <DataAnnotationsValidator />
     <FormField Label="Correo" For="email">
-        <InputText id="email" type="email" class="input" autocomplete="username" placeholder="tu@empresa.com" @bind-Value="Input.Email" />
-        <ValidationMessage For="() => Input.Email" class="field__error" />
+        <InputText id="email" type="email" class="input" autocomplete="username" placeholder="tu@empresa.com" @bind-Value="Input!.Email" />
+        <ValidationMessage For="() => Input!.Email" class="field__error" />
     </FormField>
     <FormField Label="Contraseña" For="password">
-        <InputText id="password" type="password" class="input" autocomplete="current-password" @bind-Value="Input.Password" />
-        <ValidationMessage For="() => Input.Password" class="field__error" />
+        <InputText id="password" type="password" class="input" autocomplete="current-password" @bind-Value="Input!.Password" />
+        <ValidationMessage For="() => Input!.Password" class="field__error" />
     </FormField>
     <div class="auth__row">
         <label class="auth__remember">
-            <InputCheckbox @bind-Value="Input.RememberMe" /> Mantener la sesión iniciada
+            <InputCheckbox @bind-Value="Input!.RememberMe" /> Mantener la sesión iniciada
         </label>
         <a class="auth__link" href="account/forgot-password">¿Olvidaste tu contraseña?</a>
     </div>
@@ -46,12 +46,15 @@
 @code {
     private string? _error;
 
-    [SupplyParameterFromForm] private LoginModel Input { get; set; } = new();
+    [SupplyParameterFromForm] private LoginModel? Input { get; set; }
     [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    protected override void OnInitialized() => Input ??= new();
 
     private async Task LoginAsync()
     {
-        var user = await Users.FindByEmailAsync(Input.Email.Trim());
+        var input = Input!;
+        var user = await Users.FindByEmailAsync(input.Email.Trim());
         if (user is not null && !await Users.IsInRoleAsync(user, AppRoles.SuperAdmin)
             && await Tenants.GetAsync(user.TenantId) is { Enabled: false })
         {
@@ -59,7 +62,7 @@
             return;
         }
 
-        var result = await SignIn.PasswordSignInAsync(Input.Email.Trim(), Input.Password, Input.RememberMe, lockoutOnFailure: true);
+        var result = await SignIn.PasswordSignInAsync(input.Email.Trim(), input.Password, input.RememberMe, lockoutOnFailure: true);
         if (result.Succeeded)
         {
             user!.LastLoginAt = Time.GetUtcNow();

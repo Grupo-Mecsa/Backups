@@ -14,6 +14,17 @@ services:
       Bootstrap__AdminEmail: ${BACKUP_ADMIN_EMAIL:-admin@backup.local}
       Bootstrap__AdminPassword: ${BACKUP_ADMIN_PASSWORD:-}
       Bootstrap__TenantName: ${BACKUP_TENANT_NAME:-Principal}
+      Backup__PublicUrl: ${BACKUP_PUBLIC_URL:-}    # URL pública (enlaces de invitación y recuperación de contraseña)
+      # SMTP de la plataforma: invitaciones, recuperación de contraseña y alertas de tenants sin SMTP propio (opcional)
+      Smtp__Host: ${SMTP_HOST:-}
+      Smtp__Port: ${SMTP_PORT:-587}
+      Smtp__Security: ${SMTP_SECURITY:-Auto}          # Auto | StartTls | SslOnConnect | None
+      Smtp__Username: ${SMTP_USERNAME:-}
+      Smtp__Password: ${SMTP_PASSWORD:-}
+      Smtp__FromAddress: ${SMTP_FROM:-}
+      Smtp__FromName: ${SMTP_FROM_NAME:-BackupHub}
+      # Bot de Telegram para alertas (token de @BotFather; opcional)
+      Telegram__BotToken: ${TELEGRAM_BOT_TOKEN:-}
       Notifications__Webhook__Url: ""       # Teams / Slack / n8n (opcional)
     volumes:
       - backup-data:/data                   # base SQLite + llaves de cifrado (¡respáldalo!)

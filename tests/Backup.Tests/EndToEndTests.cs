@@ -4,6 +4,7 @@ using Backup.Application.Providers;
 using Backup.Application.Security;
 using Backup.Application.Jobs;
 using Backup.Application.Runs;
+using Backup.Application.Telegram;
 using Backup.Domain.Jobs;
 using Backup.Domain.Runs;
 using Backup.Infrastructure;
@@ -25,6 +26,8 @@ public sealed class EndToEndTests : IAsyncLifetime
     private readonly string _root = Path.Combine(Path.GetTempPath(), "backup-e2e-" + Guid.NewGuid().ToString("N"));
     private ServiceProvider _services = default!;
     private readonly TestUser _user = new();
+    private readonly FakeEmailSender _email = new();
+    private readonly FakeTelegramBot _telegram = new();
 
     private string SourceDir => Path.Combine(_root, "origen");
     private string DestinationDir => Path.Combine(_root, "destino");
@@ -37,7 +40,12 @@ public sealed class EndToEndTests : IAsyncLifetime
         await File.WriteAllTextAsync(Path.Combine(SourceDir, "temporal.tmp"), "ignorar");
 
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["Backup:WorkingDirectory"] = Path.Combine(_root, "work") })
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Backup:WorkingDirectory"] = Path.Combine(_root, "work"),
+                ["Smtp:Host"] = "smtp.plataforma.test",
+                ["Smtp:FromAddress"] = "no-reply@plataforma.test",
+            })
             .Build();
 
         _services = new ServiceCollection()
@@ -47,6 +55,9 @@ public sealed class EndToEndTests : IAsyncLifetime
             .AddCloudProviders()
             .AddFileProviders()
             .AddScoped<ICurrentUser>(_ => _user)
+            .AddSingleton<IEmailSender>(_email)
+            .AddSingleton<ITelegramBot>(_telegram)
+            .AddSingleton<IAccountLinks, TestLinks>()
             .BuildServiceProvider();
 
         await _services.MigrateBackupDatabaseAsync();
@@ -331,6 +342,133 @@ public sealed class EndToEndTests : IAsyncLifetime
         Assert.Contains("falló", email.Subject, StringComparison.Ordinal);
         Assert.Contains("ERP &lt;prod&gt;", email.HtmlBody, StringComparison.Ordinal); // HTML escapado
         Assert.Contains("Conexión rechazada", email.TextBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Invitation_LetsUserDefinePassword_AndLinkIsSingleUse()
+    {
+        var admin = _services.GetRequiredService<IUserAdministration>();
+        Assert.True(await admin.CanSendEmailAsync()); // SMTP de plataforma configurado
+
+        var created = await admin.SaveAsync(new UserEdit(null, "nuevo@empresa.com", "Nuevo", AppRoles.Reader, null, SendInvitation: true));
+        Assert.True(created.Success, string.Join(" ", created.Errors));
+
+        var (smtp, message) = Assert.Single(_email.Sent);
+        Assert.Equal("smtp.plataforma.test", smtp.Host);
+        Assert.Equal(["nuevo@empresa.com"], message.To);
+        var link = new Uri(System.Text.RegularExpressions.Regex.Match(message.TextBody, @"https://\S+").Value);
+        var query = System.Web.HttpUtility.ParseQueryString(link.Query);
+        Assert.Equal("1", query["invite"]);
+
+        await using var scope = _services.CreateAsyncScope();
+        var recovery = scope.ServiceProvider.GetRequiredService<Infrastructure.Identity.PasswordRecovery>();
+        var weak = await recovery.ResetAsync(query["user"]!, query["code"]!, "corta");
+        Assert.False(weak.Success);
+        var ok = await recovery.ResetAsync(query["user"]!, query["code"]!, "NuevaClave123");
+        Assert.True(ok.Success, string.Join(" ", ok.Errors));
+
+        var users = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<Infrastructure.Identity.ApplicationUser>>();
+        Assert.True(await users.CheckPasswordAsync((await users.FindByEmailAsync("nuevo@empresa.com"))!, "NuevaClave123"));
+
+        var reused = await recovery.ResetAsync(query["user"]!, query["code"]!, "OtraClave123");
+        Assert.False(reused.Success); // el token queda invalidado al cambiar la contraseña
+
+        // "Olvidé mi contraseña" no revela si la cuenta existe.
+        await recovery.RequestResetAsync("no-existe@empresa.com");
+        Assert.Single(_email.Sent);
+    }
+
+    [Fact]
+    public async Task CreateInTenant_RequiresSuperAdmin()
+    {
+        var admin = _services.GetRequiredService<IUserAdministration>();
+        var edit = new UserEdit(null, "jefe@cliente.com", "Jefe", AppRoles.Admin, "Clave1234");
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => admin.CreateInTenantAsync(Guid.NewGuid(), edit));
+
+        _user.Role = AppRoles.SuperAdmin;
+        var (_, _, tenantB) = await _services.GetRequiredService<Application.Tenants.TenantService>().SaveAsync(null, "Cliente", enabled: true);
+        var result = await admin.CreateInTenantAsync(tenantB, edit);
+        Assert.True(result.Success, string.Join(" ", result.Errors));
+
+        _user.TenantId = tenantB;
+        _user.Role = AppRoles.Admin;
+        Assert.Contains(await admin.ListAsync(), u => u.Email == "jefe@cliente.com" && u.Role == AppRoles.Admin);
+    }
+
+    [Fact]
+    public async Task Alerts_CanUsePlatformSmtp()
+    {
+        var notifications = _services.GetRequiredService<Application.Notifications.NotificationService>();
+        Assert.Equal("no-reply@plataforma.test", notifications.PlatformSender);
+        var (defaults, _) = await notifications.GetAsync();
+        Assert.True(defaults.UsePlatformSmtp);
+
+        var errors = await notifications.SaveAsync(new Domain.Notifications.NotificationSettings
+        {
+            Enabled = true,
+            UsePlatformSmtp = true,
+            Recipients = "ti@example.com",
+        });
+        Assert.Empty(errors);
+
+        var notifier = _services.GetServices<IRunNotifier>().OfType<Application.Notifications.EmailRunNotifier>().Single();
+        await notifier.NotifyAsync(new BackupRun { TenantId = _user.TenantId, JobName = "ERP", Status = RunStatus.Failed, Error = "x" }, CancellationToken.None);
+        await Eventually.TrueAsync(() => !_email.Sent.IsEmpty);
+        var (smtp, message) = Assert.Single(_email.Sent);
+        Assert.Equal("smtp.plataforma.test", smtp.Host);
+        Assert.Equal(["ti@example.com"], message.To);
+    }
+
+    [Fact]
+    public async Task Telegram_LinkNotifyAndStop()
+    {
+        var telegram = _services.GetRequiredService<TelegramService>();
+        var commands = _services.GetRequiredService<TelegramBotCommands>();
+        var link = telegram.CreateLink();
+        Assert.Equal($"https://t.me/backuphub_test_bot?start={link.Code}", link.PrivateUrl);
+
+        // Código inválido y luego el válido (en un grupo llega como /start@bot CODIGO).
+        Assert.Equal(TelegramMessages.InvalidCode, await commands.HandleAsync(new TelegramIncoming(100, "Soporte TI", true, "/start@backuphub_test_bot nope")));
+        var reply = await commands.HandleAsync(new TelegramIncoming(100, "Soporte TI", true, $"/start@backuphub_test_bot {link.Code}"));
+        Assert.Contains("vinculado", reply, StringComparison.Ordinal);
+        Assert.Equal(TelegramMessages.InvalidCode, await commands.HandleAsync(new TelegramIncoming(100, "Soporte TI", true, $"/start {link.Code}"))); // un solo uso
+
+        var chat = Assert.Single(await telegram.ListMineAsync());
+        Assert.True(chat is { IsGroup: true, NotifyOnFailure: true, NotifyOnSuccess: false });
+
+        // Un éxito no se notifica (preferencia por defecto); un fallo sí.
+        var notifier = _services.GetServices<IRunNotifier>().OfType<TelegramRunNotifier>().Single();
+        await notifier.NotifyAsync(new BackupRun { TenantId = _user.TenantId, JobName = "ERP", Status = RunStatus.Succeeded }, CancellationToken.None);
+        await notifier.NotifyAsync(new BackupRun { TenantId = _user.TenantId, JobName = "ERP <prod>", Status = RunStatus.Failed, Error = "Disco lleno" }, CancellationToken.None);
+        await Eventually.TrueAsync(() => !_telegram.Sent.IsEmpty);
+        var (chatId, html) = Assert.Single(_telegram.Sent);
+        Assert.Equal(100, chatId);
+        Assert.Contains("ERP &lt;prod&gt;", html, StringComparison.Ordinal);
+
+        // Otro tenant no ve el chat; un lector no puede tocar chats ajenos.
+        _user.Role = AppRoles.Reader;
+        _user.UserId = "otro-usuario";
+        Assert.Empty(await telegram.ListMineAsync());
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => telegram.DeleteAsync(chat.Id));
+        _user.Role = AppRoles.Admin;
+        _user.UserId = "test-user";
+
+        Assert.Contains("Principal", await commands.HandleAsync(new TelegramIncoming(100, "Soporte TI", true, "/estado")), StringComparison.Ordinal); // tenant por defecto
+        await commands.HandleAsync(new TelegramIncoming(100, "Soporte TI", true, "/stop"));
+        Assert.Empty(await telegram.ListMineAsync());
+    }
+
+    [Fact]
+    public async Task Telegram_BlockedChatIsForgotten()
+    {
+        var telegram = _services.GetRequiredService<TelegramService>();
+        var commands = _services.GetRequiredService<TelegramBotCommands>();
+        await commands.HandleAsync(new TelegramIncoming(200, "@ana", false, $"/start {telegram.CreateLink().Code}"));
+        _telegram.BlockedChats.Add(200);
+
+        var notifier = _services.GetServices<IRunNotifier>().OfType<TelegramRunNotifier>().Single();
+        await notifier.NotifyAsync(new BackupRun { TenantId = _user.TenantId, JobName = "ERP", Status = RunStatus.Failed }, CancellationToken.None);
+        await Eventually.TrueAsync(() => telegram.ListMineAsync().GetAwaiter().GetResult().Count == 0);
     }
 
     private static ProviderBinding Binding(string key, params (string Key, string? Value)[] settings)
