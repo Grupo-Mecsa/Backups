@@ -1,31 +1,50 @@
-﻿<script type="module" src="@Assets["Components/Layout/ReconnectModal.razor.js"]"></script>
+<script type="module" src="@Assets["Components/Layout/ReconnectModal.razor.js"]"></script>
 
-<dialog id="components-reconnect-modal" data-nosnippet>
+@* Aviso cuando se pierde la conexión en tiempo real con el servidor (p. ej. al reiniciar el contenedor). *@
+<dialog id="components-reconnect-modal" data-nosnippet aria-live="polite">
     <div class="components-reconnect-container">
         <div class="components-rejoining-animation" aria-hidden="true">
             <div></div>
             <div></div>
         </div>
-        <p class="components-reconnect-first-attempt-visible">
-            Rejoining the server...
-        </p>
-        <p class="components-reconnect-repeated-attempt-visible">
-            Rejoin failed... trying again in <span id="components-seconds-to-next-attempt"></span> seconds.
-        </p>
-        <p class="components-reconnect-failed-visible">
-            Failed to rejoin.<br />Please retry or reload the page.
-        </p>
-        <button id="components-reconnect-button" class="components-reconnect-failed-visible">
-            Retry
-        </button>
-        <p class="components-pause-visible">
-            The session has been paused by the server.
-        </p>
-        <p class="components-resume-failed-visible">
-            Failed to resume the session.<br />Please retry or reload the page.
-        </p>
-        <button id="components-resume-button" class="components-pause-visible components-resume-failed-visible">
-            Resume
-        </button>
+        <span class="reconnect__icon components-reconnect-failed-visible components-resume-failed-visible" aria-hidden="true">
+            <Icon Name="plug" Size="26" />
+        </span>
+        <span class="reconnect__icon components-pause-visible" aria-hidden="true">
+            <Icon Name="pause" Size="26" />
+        </span>
+
+        <div class="components-reconnect-first-attempt-visible">
+            <h2 class="reconnect__title">Reconectando…</h2>
+            <p class="reconnect__text">Se perdió la conexión con el servidor. Tus datos no se pierden.</p>
+        </div>
+        <div class="components-reconnect-repeated-attempt-visible">
+            <h2 class="reconnect__title">Sin conexión</h2>
+            <p class="reconnect__text">Nuevo intento en <strong id="components-seconds-to-next-attempt"></strong> s.</p>
+        </div>
+        <div class="components-reconnect-failed-visible">
+            <h2 class="reconnect__title">No se pudo reconectar</h2>
+            <p class="reconnect__text">El servidor puede estar reiniciándose. Seguiremos intentando; también puedes recargar la página.</p>
+        </div>
+        <div class="components-pause-visible">
+            <h2 class="reconnect__title">Sesión en pausa</h2>
+            <p class="reconnect__text">El servidor pausó la sesión por inactividad.</p>
+        </div>
+        <div class="components-resume-failed-visible">
+            <h2 class="reconnect__title">No se pudo reanudar</h2>
+            <p class="reconnect__text">Recarga la página para continuar.</p>
+        </div>
+
+        <div class="reconnect__actions">
+            <button id="components-reconnect-button" class="btn btn--primary components-reconnect-failed-visible">
+                <Icon Name="refresh" Size="16" /> <span class="btn__label">Reintentar</span>
+            </button>
+            <button id="components-resume-button" class="btn btn--primary components-pause-visible components-resume-failed-visible">
+                <Icon Name="play" Size="16" /> <span class="btn__label">Reanudar</span>
+            </button>
+            <button type="button" class="btn btn--secondary components-reconnect-failed-visible components-resume-failed-visible" onclick="location.reload()">
+                <span class="btn__label">Recargar página</span>
+            </button>
+        </div>
     </div>
 </dialog>

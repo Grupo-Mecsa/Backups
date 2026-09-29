@@ -61,7 +61,16 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapHealthChecks("/health");
 app.MapAccountEndpoints();
+// Sin la compresión la app no puede mostrarse dentro de iframes de otros sitios (antes lo ponía Blazor).
+app.Use((context, next) =>
+{
+    context.Response.Headers.ContentSecurityPolicy = "frame-ancestors 'self'";
+    return next(context);
+});
+
+// La compresión de WebSocket (permessage-deflate) corrompía los lotes grandes de render en conexiones por la LAN
+// ("Incomplete message" en el navegador y el aviso de reconexión en bucle); en loopback no se notaba.
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+    .AddInteractiveServerRenderMode(options => options.DisableWebSocketCompression = true);
 
 await app.RunAsync();
