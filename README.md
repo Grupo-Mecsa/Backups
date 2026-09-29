@@ -1,41 +1,76 @@
-# BackupHub
+<div align="center">
 
-Plataforma de respaldos multi-tenant en **.NET 10 + Blazor Server**. Cada trabajo toma datos de un **origen**, los comprime y cifra, y los envía a un **destino**, con programación cron, retención, historial en vivo y alertas por **correo** y **Telegram**.
+# 🛡️ BackupHub
 
-| Orígenes | Destinos |
-|---|---|
-| SQL Server, PostgreSQL, MySQL/MariaDB, MongoDB, SQLite | — |
-| Carpeta local, FTP/FTPS, SFTP, SMB | Carpeta local, FTP/FTPS, SFTP, SMB |
-| S3 y compatibles, Azure Blob | S3 y compatibles, Azure Blob |
+**Respaldos multi-tenant, cifrados y programados — con alertas por correo y Telegram.**
 
-**Características principales**
+[![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![Blazor Server](https://img.shields.io/badge/Blazor-Server-512BD4?logo=blazor&logoColor=white)](https://learn.microsoft.com/aspnet/core/blazor/)
+[![SQLite](https://img.shields.io/badge/SQLite-EF%20Core-003B57?logo=sqlite&logoColor=white)](https://learn.microsoft.com/ef/core/)
+[![Docker](https://img.shields.io/badge/Docker-listo-2496ED?logo=docker&logoColor=white)](#-arranque-rápido)
+[![Telegram](https://img.shields.io/badge/Alertas-Telegram-26A5E4?logo=telegram&logoColor=white)](#-telegram)
+[![Licencia MIT](https://img.shields.io/badge/licencia-MIT-green.svg)](LICENSE)
 
-- Asistente para crear trabajos con explorador de carpetas remoto y prueba de conexión.
-- Compresión (gzip / brotli) y cifrado AES-256 + HMAC-SHA256 del artefacto.
-- Programación cron, ejecución manual, cola con concurrencia limitada y retención por cantidad/antigüedad.
-- Multi-tenant con usuarios y roles (ASP.NET Core Identity).
-- Alertas por correo (SMTP propio del tenant o de la plataforma), Telegram (chats privados y grupos) y webhook.
-- Invitaciones de usuarios y recuperación de contraseña por correo.
-- Contraseñas de orígenes/destinos y SMTP cifradas en reposo con Data Protection.
+[Arranque rápido](#-arranque-rápido) ·
+[Configuración](#%EF%B8%8F-configuración) ·
+[Usuarios y tenants](#-usuarios-roles-y-tenants) ·
+[Alertas](#-alertas) ·
+[Despliegue](#-despliegue-en-servidor) ·
+[Arquitectura](#%EF%B8%8F-arquitectura)
 
----
-
-## Contenido
-
-1. [Arranque rápido](#arranque-rápido)
-2. [Configuración](#configuración)
-3. [Usuarios, roles y tenants](#usuarios-roles-y-tenants)
-4. [Alertas](#alertas)
-5. [Despliegue en servidor](#despliegue-en-servidor)
-6. [Seguridad y operación](#seguridad-y-operación)
-7. [Arquitectura](#arquitectura)
-8. [Desarrollo](#desarrollo)
-9. [Restaurar un respaldo](#restaurar-un-respaldo)
-10. [Pendiente](#pendiente)
+</div>
 
 ---
 
-## Arranque rápido
+BackupHub toma datos de un **origen**, los **comprime y cifra** y los envía a un **destino**, con programación cron, retención automática, historial en vivo y avisos cuando algo falla. Todo desde una interfaz web en **.NET 10 + Blazor Server**, lista para correr en un contenedor.
+
+```mermaid
+flowchart LR
+    O[("🗄️ Origen<br/>BD · carpetas · nube")] --> C["🗜️ Compresión<br/>gzip · brotli"]
+    C --> E["🔐 Cifrado<br/>AES-256 + HMAC"]
+    E --> D[("☁️ Destino<br/>S3 · Azure · SFTP · SMB…")]
+    D --> R["🧹 Retención"]
+    R --> A["🔔 Alertas<br/>correo · Telegram · webhook"]
+```
+
+## ✨ Características
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**📦 Respaldos**
+- Asistente paso a paso con explorador de carpetas remoto
+- Prueba de conexión antes de guardar
+- Compresión gzip / brotli y cifrado AES-256 + HMAC-SHA256
+- Cron, ejecución manual y cola con concurrencia limitada
+- Retención por cantidad y por antigüedad
+
+</td>
+<td width="50%" valign="top">
+
+**👥 Plataforma**
+- Multi-tenant con aislamiento total de datos
+- Roles: super administrador, administrador y lector
+- Invitaciones y recuperación de contraseña por correo
+- Alertas por correo, Telegram (privado y grupos) y webhook
+- Secretos cifrados en reposo con Data Protection
+
+</td>
+</tr>
+</table>
+
+### 🔌 Proveedores
+
+| | Orígenes | Destinos |
+|---|---|:---:|
+| 🗄️ **Bases de datos** | SQL Server · PostgreSQL · MySQL/MariaDB · MongoDB · SQLite | — |
+| 📁 **Archivos** | Carpeta local · FTP/FTPS · SFTP · SMB | ✅ los mismos |
+| ☁️ **Nube** | S3 y compatibles · Azure Blob | ✅ los mismos |
+
+---
+
+## 🚀 Arranque rápido
 
 ### Con Docker
 
@@ -52,9 +87,13 @@ docker logs backuphub 2>&1 | grep "Administrador inicial"
 
 Cámbiala en **Mi cuenta** después de entrar.
 
+> [!IMPORTANT]
 > El volumen `backup-data` (`/data`) guarda la base SQLite **y las llaves de cifrado**. Si se pierden las llaves, las contraseñas guardadas no se pueden descifrar. Inclúyelo en tus propios respaldos.
 
-### Valores para probar con el perfil `demo`
+<details>
+<summary><b>🧪 Valores para probar con el perfil <code>demo</code></b></summary>
+
+<br/>
 
 | Tipo | Configuración |
 |---|---|
@@ -63,7 +102,12 @@ Cámbiala en **Mi cuenta** después de entrar.
 | Destino SFTP | Host `sftp` · Puerto `22` · Usuario `demo` · Contraseña `demo1234` · Carpeta `/respaldos` |
 | Destino carpeta local | Ruta `/backups` |
 
-### Sin Docker (desarrollo)
+</details>
+
+<details>
+<summary><b>💻 Sin Docker (desarrollo)</b></summary>
+
+<br/>
 
 Requiere el SDK de .NET 10. Para los orígenes de bases de datos se necesitan además `pg_dump`, `mysqldump` o `mongodump` en el `PATH`.
 
@@ -73,9 +117,11 @@ dotnet run --project src/Backup.Web        # → http://localhost:5003
 
 Los datos quedan en `src/Backup.Web/data/` salvo que definas `Backup__DataDirectory`.
 
+</details>
+
 ---
 
-## Configuración
+## ⚙️ Configuración
 
 Todo se configura con variables de entorno (o `appsettings.json`). En `docker-compose.yml` cada variable tiene un equivalente en mayúsculas para usar con un archivo `.env`.
 
@@ -88,9 +134,14 @@ Todo se configura con variables de entorno (o `appsettings.json`). En `docker-co
 | `Backup__MaxConcurrentRuns` | `2` | Respaldos ejecutándose en paralelo. |
 | `Backup__RunHistoryDays` | `90` | Días de historial de ejecuciones (`0` = para siempre). |
 | `Backup__DisplayTimeZone` | UTC | Zona horaria para mostrar fechas, p. ej. `America/Costa_Rica`. |
-| `Backup__PublicUrl` | — | URL pública, p. ej. `https://respaldos.empresa.com`. **Recomendada detrás de un proxy**: se usa en los enlaces de invitación y recuperación. Si falta, se usa la URL con la que se abrió la app. |
+| `Backup__PublicUrl` | — | URL pública, p. ej. `https://respaldos.empresa.com`. Se usa en los enlaces de invitación y recuperación; si falta, se usa la URL con la que se abrió la app. |
+
+> [!TIP]
+> Detrás de un proxy inverso define siempre `Backup__PublicUrl`, para que los enlaces de los correos apunten a la dirección pública.
 
 ### Primer arranque
+
+Solo se aplican si la base no tiene usuarios.
 
 | Variable | Por defecto | Descripción |
 |---|---|---|
@@ -98,9 +149,7 @@ Todo se configura con variables de entorno (o `appsettings.json`). En `docker-co
 | `Bootstrap__AdminEmail` | `admin@backup.local` | Correo del super administrador inicial. |
 | `Bootstrap__AdminPassword` | — | Si queda vacía se genera una y se escribe en el log. |
 
-Solo se aplican si la base no tiene usuarios.
-
-### SMTP de la plataforma (opcional)
+### 📧 SMTP de la plataforma <sub>(opcional)</sub>
 
 Servidor de correo del operador. Se usa para **invitaciones y recuperación de contraseña**, y para las **alertas** de los tenants que elijan "Usar el servidor de la plataforma".
 
@@ -113,13 +162,13 @@ Servidor de correo del operador. Se usa para **invitaciones y recuperación de c
 | `Smtp__FromAddress` | — | Remitente, p. ej. `respaldos@empresa.com`. Obligatorio. |
 | `Smtp__FromName` | `BackupHub` | Nombre visible del remitente. |
 
-### Telegram (opcional)
+### ✈️ Telegram <sub>(opcional)</sub>
 
 | Variable | Descripción |
 |---|---|
 | `Telegram__BotToken` | Token del bot creado con [@BotFather](https://t.me/BotFather). Vacío = Telegram deshabilitado. |
 
-### Webhook (opcional)
+### 🪝 Webhook <sub>(opcional)</sub>
 
 | Variable | Descripción |
 |---|---|
@@ -128,17 +177,20 @@ Servidor de correo del operador. Se usa para **invitaciones y recuperación de c
 
 ---
 
-## Usuarios, roles y tenants
+## 👥 Usuarios, roles y tenants
 
-Autenticación con ASP.NET Core Identity (cookie de 12 h con renovación). Cada trabajo, ejecución, usuario, configuración de alertas y chat de Telegram pertenece a un **tenant**, y los servicios filtran siempre por el tenant del usuario: un tenant nunca ve datos de otro.
+Autenticación con ASP.NET Core Identity (cookie de 12 h con renovación). Cada trabajo, ejecución, usuario, configuración de alertas y chat de Telegram pertenece a un **tenant**, y los servicios filtran siempre por el tenant del usuario: **un tenant nunca ve datos de otro**.
 
 | Rol | Puede |
 |---|---|
-| **Super administrador** | Todo lo del Administrador, más crear y editar tenants, entrar a cualquiera desde la barra lateral y asignar el rol de super administrador. |
-| **Administrador** | Crear, editar, ejecutar y eliminar trabajos; gestionar usuarios y alertas de su tenant. |
-| **Lector** | Ver panel, trabajos e historial. Vincular su propio Telegram. |
+| 👑 **Super administrador** | Todo lo del Administrador, más crear y editar tenants, entrar a cualquiera desde la barra lateral y asignar el rol de super administrador. |
+| 🛠️ **Administrador** | Crear, editar, ejecutar y eliminar trabajos; gestionar usuarios y alertas de su tenant. |
+| 👁️ **Lector** | Ver panel, trabajos e historial. Vincular su propio Telegram. |
 
-**Reglas que aplica el sistema**
+<details>
+<summary><b>🔒 Reglas que aplica el sistema</b></summary>
+
+<br/>
 
 - Nadie puede bloquearse, eliminarse ni cambiar su propio rol.
 - Cada tenant conserva al menos un administrador activo.
@@ -147,12 +199,16 @@ Autenticación con ASP.NET Core Identity (cookie de 12 h con renovación). Cada 
 - Bloquear a un usuario o cambiar su rol cierra sus sesiones abiertas.
 - Los usuarios de un tenant deshabilitado no pueden iniciar sesión (sus trabajos programados siguen ejecutándose).
 
+</details>
+
 ### Crear usuarios
 
 En **Administración → Usuarios → Nuevo usuario** hay dos formas de dar acceso:
 
-- **Invitación por correo** (requiere un SMTP disponible): el usuario recibe un enlace para definir su contraseña. El enlace vale 48 horas y es de un solo uso.
-- **Contraseña inicial**: la defines tú y se la comunicas por otro medio.
+| Modo | Cómo funciona |
+|---|---|
+| ✉️ **Invitación por correo** | El usuario recibe un enlace para definir su contraseña. Vale 48 h y es de un solo uso. Requiere un SMTP disponible. |
+| 🔑 **Contraseña inicial** | La defines tú y se la comunicas por otro medio. |
 
 El botón ✉ de cada usuario reenvía la invitación (si nunca entró) o manda un enlace para restablecer la contraseña.
 
@@ -164,15 +220,22 @@ En **Administración → Tenants → Nuevo tenant** (solo super administradores)
 
 La pantalla de inicio de sesión tiene **¿Olvidaste tu contraseña?**. La respuesta es siempre la misma, exista o no la cuenta, y cada cuenta recibe como mucho un correo cada 2 minutos. Los correos de cuenta salen del SMTP de la plataforma y, si no hay, del SMTP propio del tenant del usuario.
 
-Si no hay ningún SMTP configurado, un administrador puede fijar una contraseña nueva desde **Usuarios → Editar**.
+> [!NOTE]
+> Si no hay ningún SMTP configurado, un administrador puede fijar una contraseña nueva desde **Usuarios → Editar**.
 
 ---
 
-## Alertas
+## 🔔 Alertas
 
-Las alertas se envían cuando una ejecución termina: **fallida o cancelada**, y opcionalmente también cuando termina **correctamente**. El envío no retrasa el cierre de la ejecución, y un fallo de envío solo queda en el log.
+Se envían cuando una ejecución termina **fallida o cancelada**, y opcionalmente también cuando termina **correctamente**. El envío no retrasa el cierre de la ejecución, y un fallo de envío solo queda en el log.
 
-### Correo
+| Canal | Quién lo configura | Alcance |
+|---|---|---|
+| 📧 Correo | Administrador del tenant | Destinatarios del tenant |
+| ✈️ Telegram | Cada usuario | Su chat privado o un grupo |
+| 🪝 Webhook | Operador (variable de entorno) | Todos los tenants |
+
+### 📧 Correo
 
 **Administración → Alertas** (administradores del tenant):
 
@@ -180,31 +243,48 @@ Las alertas se envían cuando una ejecución termina: **fallida o cancelada**, y
 2. Escribe los destinatarios, separados por coma o uno por línea.
 3. Elige el servidor:
    - **Servidor de la plataforma**: aparece solo si el operador configuró `Smtp__*`.
-   - **SMTP propio**: servidor, puerto, seguridad, usuario, contraseña y remitente. Hay atajos para Microsoft 365, Gmail/Workspace, Zoho y SendGrid.
+   - **SMTP propio**: servidor, puerto, seguridad, usuario, contraseña y remitente, con atajos para los proveedores más comunes.
 4. Pulsa **Enviar correo de prueba** (usa lo que está en pantalla, sin guardarlo) y luego **Guardar**.
 
 La contraseña SMTP se guarda cifrada y nunca vuelve al navegador: si dejas el campo vacío, se conserva la guardada.
 
 | Proveedor | Servidor | Puerto | Seguridad | Nota |
-|---|---|---|---|---|
+|---|---|:---:|---|---|
 | Microsoft 365 | `smtp.office365.com` | 587 | STARTTLS | El buzón debe tener *SMTP AUTH* habilitado. |
 | Gmail / Workspace | `smtp.gmail.com` | 587 | STARTTLS | Requiere una *contraseña de aplicación*. |
 | Zoho | `smtp.zoho.com` | 465 | SSL/TLS | |
 | SendGrid | `smtp.sendgrid.net` | 587 | STARTTLS | Usuario `apikey`, contraseña = API key. |
 
-### Telegram
+### ✈️ Telegram
 
 Cada usuario (incluidos los lectores) se suscribe a las alertas de su tenant desde Telegram, en un chat privado o en un grupo.
 
-**1. Crear el bot (una vez, lo hace el operador)**
+```mermaid
+sequenceDiagram
+    actor U as Usuario
+    participant W as BackupHub (web)
+    participant B as Bot de Telegram
+    U->>W: Mi cuenta → Conectar Telegram
+    W-->>U: Enlace t.me/tu_bot?start=CÓDIGO
+    U->>B: Iniciar (envía /start CÓDIGO)
+    B->>W: Valida el código (un solo uso, 15 min)
+    W-->>B: Chat vinculado al tenant
+    B-->>U: ✅ Chat vinculado
+    Note over W,B: Al terminar cada respaldo
+    W->>B: Resultado según preferencias del chat
+    B-->>U: ❌ Respaldo falló…
+```
+
+**1. Crear el bot** <sub>(una vez, lo hace el operador)</sub>
 
 1. En Telegram, abre [@BotFather](https://t.me/BotFather) y envía `/newbot`. Elige un nombre y un usuario terminado en `bot`.
 2. Copia el token (`123456789:AA...`) en `Telegram__BotToken` (o `TELEGRAM_BOT_TOKEN` en `.env`) y reinicia el contenedor.
 3. En el log debe aparecer `Bot de Telegram conectado: @tu_bot`.
 
-El bot recibe los mensajes con *long polling* (`getUpdates`): **no necesita URL pública ni puertos abiertos**, solo salida HTTPS a `api.telegram.org`. Por eso el token no debe usarse en otra aplicación con webhook ni en otra instancia de BackupHub al mismo tiempo (Telegram respondería 409 y el log lo indica).
+> [!NOTE]
+> El bot recibe los mensajes con *long polling* (`getUpdates`): **no necesita URL pública ni puertos abiertos**, solo salida HTTPS a `api.telegram.org`. Por eso el token no debe usarse en otra aplicación con webhook ni en otra instancia de BackupHub al mismo tiempo (Telegram respondería 409 y el log lo indica).
 
-**2. Suscribirse (cada usuario)**
+**2. Suscribirse** <sub>(cada usuario)</sub>
 
 1. Ve a **Mi cuenta → Telegram → Conectar Telegram**.
 2. Pulsa **Abrir chat con @tu_bot** y luego **Iniciar**, o **Agregar a un grupo** para que el grupo reciba las alertas. Si el enlace no abre, envía al bot el mensaje `/start CÓDIGO` que muestra la pantalla.
@@ -212,8 +292,6 @@ El bot recibe los mensajes con *long polling* (`getUpdates`): **no necesita URL 
 4. Elige por chat si quieres **fallos**, **éxitos** o ambos, y usa ⚡ para enviar un mensaje de prueba.
 
 En **Administración → Alertas → Telegram** los administradores ven todos los chats del tenant y pueden desvincularlos.
-
-**Comandos del bot**
 
 | Comando | Acción |
 |---|---|
@@ -224,13 +302,30 @@ En **Administración → Alertas → Telegram** los administradores ven todos lo
 
 Si alguien bloquea al bot o lo saca de un grupo, la suscripción se elimina automáticamente. Al eliminar un usuario también se eliminan los chats que vinculó.
 
-### Webhook
+### 🪝 Webhook
 
-Con `Notifications__Webhook__Url`, cada ejecución terminada envía un JSON con `text`, `job`, `status`, `startedAt`, `finishedAt`, `artifact`, `sizeBytes`, `sha256` y `error`. El campo `text` sirve directamente para Teams o Slack.
+Con `Notifications__Webhook__Url`, cada ejecución terminada envía un JSON como este (el campo `text` sirve directamente para Teams o Slack):
+
+```json
+{
+  "text": "❌ Respaldo 'ERP' falló: Conexión rechazada",
+  "job": "ERP",
+  "jobId": "5f0c…",
+  "runId": "9a2e…",
+  "status": "Failed",
+  "trigger": "Scheduled",
+  "startedAt": "2026-09-29T02:00:00Z",
+  "finishedAt": "2026-09-29T02:00:04Z",
+  "artifact": null,
+  "sizeBytes": 0,
+  "sha256": null,
+  "error": "Conexión rechazada"
+}
+```
 
 ---
 
-## Despliegue en servidor
+## 🌐 Despliegue en servidor
 
 `deploy/docker-compose.yml` no incluye servicios de prueba y publica el puerto 8090.
 
@@ -244,7 +339,10 @@ scp deploy/docker-compose.yml usuario@servidor:backuphub/
 ssh usuario@servidor 'cd backuphub && docker compose up -d'
 ```
 
-Ejemplo de `.env`:
+<details>
+<summary><b>📄 Ejemplo de <code>.env</code></b></summary>
+
+<br/>
 
 ```dotenv
 BACKUP_PUBLIC_URL=https://respaldos.empresa.com
@@ -262,46 +360,73 @@ SMTP_FROM=respaldos@empresa.com
 TELEGRAM_BOT_TOKEN=123456789:AA...
 ```
 
+</details>
+
 Las migraciones de base de datos se aplican solas al arrancar.
 
-**HTTPS**: publica la app detrás de un proxy inverso (Caddy, Nginx, Traefik) con certificado y define `BACKUP_PUBLIC_URL` con la URL `https://` para que los enlaces de los correos sean correctos. El proxy debe soportar WebSockets (Blazor Server).
+> [!WARNING]
+> **HTTPS**: publica la app detrás de un proxy inverso (Caddy, Nginx, Traefik) con certificado y define `BACKUP_PUBLIC_URL` con la URL `https://`. El proxy debe soportar WebSockets (Blazor Server).
 
 ---
 
-## Seguridad y operación
+## 🔐 Seguridad y operación
 
-- **Llaves de cifrado**: `/data/keys` contiene las llaves de Data Protection con las que se cifran las contraseñas de orígenes, destinos y SMTP. Respalda el volumen `/data` completo y protégelo como un secreto.
-- **Contraseña de cifrado de los artefactos**: se guarda cifrada en el trabajo. Sin ella, un artefacto `.enc` no se puede restaurar: guárdala también fuera de BackupHub.
-- **Secretos de la plataforma** (`Smtp__Password`, `Telegram__BotToken`) viven solo en variables de entorno. El cliente HTTP de Telegram no registra las URLs de las peticiones, así que el token no aparece en los logs.
-- **Tokens de cuenta**: los enlaces de invitación y recuperación caducan a las 48 h y dejan de valer en cuanto se cambia la contraseña.
-- **Salud**: `GET /health` responde `200` y lo usa el `HEALTHCHECK` de la imagen.
-- **Versión de `pg_dump`**: debe ser mayor o igual que la de tus servidores PostgreSQL (argumento `PG_MAJOR` del `Dockerfile`, por defecto 17).
+| Tema | Detalle |
+|---|---|
+| 🗝️ **Llaves de cifrado** | `/data/keys` contiene las llaves de Data Protection que cifran las contraseñas de orígenes, destinos y SMTP. Respalda el volumen `/data` completo y protégelo como un secreto. |
+| 🔒 **Contraseña de los artefactos** | Se guarda cifrada en el trabajo. Sin ella, un `.enc` no se puede restaurar: guárdala también fuera de BackupHub. |
+| 🤫 **Secretos de la plataforma** | `Smtp__Password` y `Telegram__BotToken` viven solo en variables de entorno. El cliente HTTP de Telegram no registra URLs, así que el token no aparece en los logs. |
+| ⏳ **Tokens de cuenta** | Los enlaces de invitación y recuperación caducan a las 48 h y dejan de valer en cuanto se cambia la contraseña. |
+| 💓 **Salud** | `GET /health` responde `200` y lo usa el `HEALTHCHECK` de la imagen. |
+| 🐘 **Versión de `pg_dump`** | Debe ser ≥ a la de tus servidores PostgreSQL (argumento `PG_MAJOR` del `Dockerfile`, por defecto 17). |
 
 ---
 
-## Arquitectura
+## 🏗️ Arquitectura
+
+```mermaid
+flowchart TB
+    Web["🖥️ Backup.Web<br/>Blazor Server · atomic design"]
+    App["🧠 Backup.Application<br/>casos de uso · pipeline · notificadores"]
+    Dom["📐 Backup.Domain<br/>entidades"]
+    Inf["🔧 Backup.Infrastructure<br/>EF Core · Identity · MailKit · Telegram · cron"]
+    Prov["🔌 Backup.Providers.*<br/>Databases · Cloud · Files"]
+    Web --> App
+    Web --> Inf
+    Web --> Prov
+    Inf --> App
+    Prov --> App
+    App --> Dom
+```
 
 ```
 src/
   Backup.Domain              Entidades: BackupJob, BackupRun, Tenant, NotificationSettings, TelegramSubscription
-  Backup.Application         Contratos (puertos), pipeline, casos de uso (JobService, TenantService,
-                             NotificationService, TelegramService), notificadores de correo y Telegram
+  Backup.Application         Puertos, pipeline, casos de uso (JobService, TenantService, NotificationService,
+                             TelegramService) y notificadores de correo y Telegram
   Backup.Infrastructure      EF Core/SQLite, Identity, Data Protection, compresión, AES-256+HMAC, cron, cola,
                              MailKit, cliente de la Bot API de Telegram (long polling), webhook
-  Backup.Providers.*         Plugins de origen/destino: Databases, Cloud, Files
-  Backup.Web                 Blazor Server con atomic design (Atoms → Molecules → Organisms → Templates → Pages)
+  Backup.Providers.*         Plugins de origen/destino
+  Backup.Web                 Atoms → Molecules → Organisms → Templates → Pages
 tests/Backup.Tests           Unitarias y extremo a extremo
 ```
 
 **Flujo de una ejecución**: `SchedulerService` (cron) o el botón *Ejecutar* encolan el trabajo en `BackupQueue` → `BackupWorker` llama a `BackupRunner`, que pide los datos al `IBackupSource`, los pasa por las transformaciones (compresión, cifrado) y los entrega al `IBackupDestination` → aplica la retención → cada `IRunNotifier` (UI en vivo, correo, Telegram, webhook) recibe el resultado.
 
+<details>
+<summary><b>🧩 Extender BackupHub</b></summary>
+
+<br/>
+
 **Agregar un proveedor**: implementa `IBackupSource` o `IBackupDestination` (y opcionalmente `IConnectionTester` / `IFolderBrowser`), descríbelo con `ProviderDescriptor` y regístralo con `AddBackupSource<T>()` / `AddBackupDestination<T>()`. La UI genera su formulario a partir de los `SettingField` del descriptor.
 
 **Agregar un canal de alertas**: implementa `IRunNotifier` y regístralo con `AddSingleton<IRunNotifier, TuNotificador>()`. Los notificadores existentes muestran el patrón: filtran por tenant y preferencias, y envían en segundo plano sin propagar errores.
 
+</details>
+
 ---
 
-## Desarrollo
+## 🧑‍💻 Desarrollo
 
 ```bash
 dotnet build Backup.slnx
@@ -317,13 +442,27 @@ Las pruebas usan dobles para SMTP y Telegram (`tests/Backup.Tests/TestDoubles.cs
 dotnet ef migrations add NombreDelCambio -p src/Backup.Infrastructure -s src/Backup.Web -o Persistence/Migrations
 ```
 
-**Probar Telegram en local**: define `Telegram__BotToken` con un bot de pruebas (no el de producción: dos instancias no pueden hacer polling con el mismo token).
+> [!TIP]
+> Para probar Telegram en local usa un bot de pruebas, no el de producción: dos instancias no pueden hacer polling con el mismo token.
 
 ---
 
-## Restaurar un respaldo
+## ♻️ Restaurar un respaldo
 
-Ruta del artefacto en el destino: `{trabajo}/{trabajo}_{yyyyMMdd_HHmmss}{extensión}[.gz|.br][.enc]`, donde la extensión depende del origen: `.zip` (carpetas y archivos), `.sql`/`.dump`/`.tar` (PostgreSQL), `.sql` (MySQL), `.bak` (SQL Server), `.archive` (MongoDB) o `.db` (SQLite).
+Ruta del artefacto en el destino:
+
+```
+{trabajo}/{trabajo}_{yyyyMMdd_HHmmss}{extensión}[.gz|.br][.enc]
+```
+
+| Origen | Extensión |
+|---|---|
+| Carpetas y archivos | `.zip` |
+| PostgreSQL | `.sql` · `.dump` · `.tar` |
+| MySQL / MariaDB | `.sql` |
+| SQL Server | `.bak` |
+| MongoDB | `.archive` |
+| SQLite | `.db` |
 
 1. **Descifrar** (`.enc`). Formato: `"BKE1" | salt | iv | AES-256-CBC | HMAC-SHA256`, llaves derivadas con PBKDF2-SHA256 (210 000 iteraciones). `BackupEncryption.DecryptAsync` verifica la integridad antes de descifrar.
 2. **Descomprimir** según la extensión: `gunzip` (`.gz`) o `brotli -d` (`.br`).
@@ -331,8 +470,18 @@ Ruta del artefacto en el destino: `{trabajo}/{trabajo}_{yyyyMMdd_HHmmss}{extensi
 
 ---
 
-## Pendiente
+## 🗺️ Pendiente
 
-- Restauración desde la UI.
-- Configurar el bot de Telegram por tenant (hoy hay un bot por plataforma).
-- Alerta cuando un trabajo programado no se ejecuta a tiempo.
+- [ ] Restauración desde la UI
+- [ ] Bot de Telegram por tenant (hoy hay uno por plataforma)
+- [ ] Alerta cuando un trabajo programado no se ejecuta a tiempo
+
+---
+
+## 📄 Licencia
+
+Distribuido bajo la licencia **MIT**. Consulta el archivo [LICENSE](LICENSE) para más detalles.
+
+<div align="center">
+<sub>© 2026 Steven Gazo Maliaño</sub>
+</div>
