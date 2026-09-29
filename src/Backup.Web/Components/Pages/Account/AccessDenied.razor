@@ -1,0 +1,10 @@
+@page "/account/access-denied"
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@layout AuthLayout
+
+<PageTitle>Acceso denegado · BackupHub</PageTitle>
+
+<h1 class="auth__title">Acceso denegado</h1>
+<p class="auth__subtitle">Tu rol no permite realizar esta acción.</p>
+<a href="/" class="btn btn--secondary btn--lg auth__submit"><Icon Name="dashboard" Size="16" /> <span class="btn__label">Ir al panel</span></a>

@@ -1,0 +1,24 @@
+<Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Templates.AppShell)">
+            <NotAuthorized>
+                @if (context.User.Identity?.IsAuthenticated != true)
+                {
+                    <RedirectToLogin />
+                }
+                else
+                {
+                    <PageTemplate Title="Acceso denegado" Subtitle="Tu rol no permite ver esta página.">
+                        <EmptyState Icon="lock" Title="No tienes permisos" Text="Pide a un administrador que te asigne el rol adecuado.">
+                            <Button Href="/" Icon="dashboard">Ir al panel</Button>
+                        </EmptyState>
+                    </PageTemplate>
+                }
+            </NotAuthorized>
+            <Authorizing>
+                <div class="skeleton skeleton--card"></div>
+            </Authorizing>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>

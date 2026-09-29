@@ -1,0 +1,106 @@
+@page "/"
+@inherits LiveComponentBase
+@inject DashboardService Summaries
+
+<PageTemplate Title="Panel" Subtitle="Estado general de tus respaldos">
+    <Actions>
+        @if (CurrentUser.CanManage)
+        {
+            <Button Href="/jobs/new" Icon="plus">Nuevo trabajo</Button>
+        }
+    </Actions>
+    <ChildContent>
+        @if (_summary is null)
+        {
+            <div class="stats">
+                @for (var i = 0; i < 4; i++)
+                {
+                    <div class="skeleton skeleton--stat"></div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="stats">
+                <StatCard Index="0" Icon="jobs" Label="Trabajos" Value="@_summary.TotalJobs.ToString()"
+                          Caption="@($"{_summary.ScheduledJobs} programados")" />
+                <StatCard Index="1" Icon="history" Tone="Tone.Info" Label="Ejecuciones (7 días)" Value="@_summary.RunsLast7Days.ToString()"
+                          Caption="@(_summary.FailedLast7Days > 0 ? $"{_summary.FailedLast7Days} fallidas" : "Sin fallos")" />
+                <StatCard Index="2" Icon="shield" Tone="@(SuccessTone)" Label="Tasa de éxito"
+                          Value="@(_summary.SuccessRate is { } rate ? rate.ToString("P0") : "—")" Caption="Últimos 7 días" />
+                <StatCard Index="3" Icon="hard-drive" Tone="Tone.Warning" Label="Datos respaldados" Value="@ByteSize.Format(_summary.BytesLast7Days)"
+                          Caption="Últimos 7 días" />
+            </div>
+
+            <div class="grid-2">
+                <Card Index="4">
+                    <header class="card__header">
+                        <h2 class="card__title">Actividad</h2>
+                        <span class="muted">Últimos 7 días</span>
+                    </header>
+                    <ActivityChart Days="_summary.Daily" />
+                </Card>
+
+                <Card Index="5">
+                    <header class="card__header">
+                        <h2 class="card__title">Próximas ejecuciones</h2>
+                    </header>
+                    @if (_summary.Upcoming.Count == 0)
+                    {
+                        <EmptyState Icon="calendar" Title="Nada programado" Text="Asigna un horario a tus trabajos para verlos aquí." />
+                    }
+                    else
+                    {
+                        <ul class="upcoming">
+                            @for (var i = 0; i < _summary.Upcoming.Count; i++)
+                            {
+                                var item = _summary.Upcoming[i];
+                                <li class="upcoming__item animate-in" style="--i: @i">
+                                    <span class="upcoming__icon"><Icon Name="clock" Size="16" /></span>
+                                    <a href="@($"/jobs/{item.JobId}")" class="upcoming__name">@item.JobName</a>
+                                    <span class="upcoming__when" title="@Display.DateTime(item.At)">@Display.Relative(item.At)</span>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </Card>
+            </div>
+
+            <Card Index="6">
+                <header class="card__header">
+                    <h2 class="card__title">Ejecuciones recientes</h2>
+                    <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Href="/runs" IconAfter="arrow-right">Ver historial</Button>
+                </header>
+                @if (_summary.RecentRuns.Count == 0)
+                {
+                    <EmptyState Icon="history" Title="Aún no hay ejecuciones" Text="Crea un trabajo y ejecútalo para ver el resultado aquí.">
+                        @if (CurrentUser.CanManage)
+                        {
+                            <Button Href="/jobs/new" Icon="plus">Crear trabajo</Button>
+                        }
+                    </EmptyState>
+                }
+                else
+                {
+                    <RunTable Runs="_summary.RecentRuns" />
+                }
+            </Card>
+        }
+    </ChildContent>
+</PageTemplate>
+
+@code {
+    private DashboardSummary? _summary;
+
+    private Tone SuccessTone => _summary?.SuccessRate switch
+    {
+        null => Tone.Neutral,
+        >= 0.95 => Tone.Success,
+        >= 0.8 => Tone.Warning,
+        _ => Tone.Danger,
+    };
+
+    protected override async Task OnInitializedAsync() => _summary = await Summaries.GetSummaryAsync();
+
+    protected override async Task OnRunChangedAsync(BackupRun run) => _summary = await Summaries.GetSummaryAsync();
+}

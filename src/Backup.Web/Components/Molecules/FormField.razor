@@ -1,0 +1,39 @@
+<div class="field @(Error is not null ? "has-error" : null) @Class">
+    @if (Label is not null)
+    {
+        <label class="field__label" for="@For">
+            @Label
+            @if (Required)
+            {
+                <span class="field__required" aria-hidden="true">*</span>
+            }
+            @if (Hint is not null)
+            {
+                <span class="field__hint">@Hint</span>
+            }
+        </label>
+    }
+    @ChildContent
+    @if (Error is not null)
+    {
+        <p class="field__error"><Icon Name="alert" Size="13" /> @Error</p>
+    }
+    else if (Help is not null)
+    {
+        <p class="field__help">@Help</p>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? For { get; set; }
+    [Parameter] public string? Help { get; set; }
+
+    /// <summary>Texto corto junto a la etiqueta (p. ej. "guardada").</summary>
+    [Parameter] public string? Hint { get; set; }
+
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public bool Required { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

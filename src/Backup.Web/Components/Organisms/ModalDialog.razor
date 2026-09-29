@@ -1,0 +1,31 @@
+@if (Visible)
+{
+    <div class="dialog-backdrop" @onclick="Close">
+        <div class="dialog dialog--form" role="dialog" aria-modal="true" aria-labelledby="modal-title" @onclick:stopPropagation>
+            <header class="dialog__header">
+                @if (Icon is not null)
+                {
+                    <span class="explorer__header-icon"><Icon Name="@Icon" Size="18" /></span>
+                }
+                <h2 id="modal-title" class="dialog__title">@Title</h2>
+                <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="x" IconOnly AriaLabel="Cerrar" OnClick="Close" />
+            </header>
+            <div class="dialog__body">@ChildContent</div>
+            @if (Footer is not null)
+            {
+                <footer class="dialog__footer">@Footer</footer>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Footer { get; set; }
+
+    private Task Close() => VisibleChanged.InvokeAsync(false);
+}

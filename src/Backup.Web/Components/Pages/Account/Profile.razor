@@ -1,0 +1,87 @@
+@page "/account/profile"
+@inject IUserAdministration UserAdmin
+@inject CurrentUser Me
+@inject ToastService Toasts
+
+<PageTemplate Title="Mi cuenta" Subtitle="@Me.Email">
+    <Card Class="editor profile" Animate="false">
+        <div class="profile__head">
+            <span class="user-card__avatar user-card__avatar--lg">@Initials</span>
+            <div>
+                <h2 class="card__title">@Me.DisplayName</h2>
+                <Badge Tone="Tone.Accent" Icon="shield">@AppRoles.Label(Me.Role ?? AppRoles.Reader)</Badge>
+            </div>
+        </div>
+
+        <h3 class="editor__title">Cambiar contraseña</h3>
+        @if (_errors.Count > 0)
+        {
+            <div class="callout callout--danger"><Icon Name="alert" Size="16" />
+                <ul class="plain-list">@foreach (var error in _errors) { <li>@error</li> }</ul>
+            </div>
+        }
+        <div class="form-grid">
+            <FormField Label="Contraseña actual" For="p-current" Required>
+                <TextInput Id="p-current" Type="password" @bind-Value="_current" />
+            </FormField>
+            <FormField Label="Nueva contraseña" For="p-new" Required Help="Mínimo 8 caracteres, con mayúscula, minúscula y número.">
+                <TextInput Id="p-new" Type="password" @bind-Value="_new" />
+            </FormField>
+            <FormField Label="Confirmar" For="p-confirm" Required>
+                <TextInput Id="p-confirm" Type="password" @bind-Value="_confirm" />
+            </FormField>
+        </div>
+        <footer class="editor__footer">
+            <span class="spacer"></span>
+            <Button Icon="key" Busy="_saving" OnClick="ChangePassword">Actualizar contraseña</Button>
+        </footer>
+    </Card>
+
+    <Card Class="editor profile" Animate="false">
+        <h3 class="editor__title"><Icon Name="send" Size="18" /> Telegram</h3>
+        <p class="muted editor__lead">Recibe en Telegram el resultado de los respaldos. Elige por chat si quieres fallos, éxitos o ambos.</p>
+        <TelegramChats AllowConnect />
+    </Card>
+</PageTemplate>
+
+@code {
+    private string? _current;
+    private string? _new;
+    private string? _confirm;
+    private bool _saving;
+    private IReadOnlyList<string> _errors = [];
+
+    private string Initials => string.Concat((Me.DisplayName ?? "?")
+        .Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(p => char.ToUpperInvariant(p[0])));
+
+    private async Task ChangePassword()
+    {
+        if (string.IsNullOrEmpty(_current) || string.IsNullOrEmpty(_new))
+        {
+            _errors = ["Completa la contraseña actual y la nueva."];
+            return;
+        }
+
+        if (_new != _confirm)
+        {
+            _errors = ["La confirmación no coincide con la nueva contraseña."];
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var result = await UserAdmin.ChangeOwnPasswordAsync(_current, _new);
+            _errors = result.Errors;
+            if (result.Success)
+            {
+                (_current, _new, _confirm) = (null, null, null);
+                Toasts.Success("Contraseña actualizada");
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

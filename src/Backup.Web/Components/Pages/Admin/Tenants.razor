@@ -1,0 +1,168 @@
+@page "/admin/tenants"
+@attribute [Authorize(Policy = AppPolicies.SuperAdmin)]
+@using Backup.Application.Tenants
+@using Backup.Domain.Tenants
+@inject TenantService TenantService
+@inject IUserAdministration UserAdmin
+@inject CurrentUser Me
+@inject ToastService Toasts
+
+<PageTemplate Title="Tenants" Subtitle="Organizaciones aisladas: cada una tiene sus propios trabajos, usuarios y alertas">
+    <Actions>
+        <Button Icon="plus" OnClick="New">Nuevo tenant</Button>
+    </Actions>
+    <ChildContent>
+        @if (_tenants is null)
+        {
+            <div class="skeleton skeleton--table"></div>
+        }
+        else
+        {
+            <div class="tenant-grid">
+                @for (var i = 0; i < _tenants.Count; i++)
+                {
+                    var tenant = _tenants[i];
+                    var isCurrent = tenant.Id == Me.TenantId;
+                    <Card Index="i" Interactive Class="@($"tenant-card {(isCurrent ? "is-current" : null)} {(tenant.Enabled ? null : "is-disabled")}")">
+                        <header class="tenant-card__header">
+                            <span class="tenant-card__icon"><Icon Name="share" Size="18" /></span>
+                            <div class="tenant-card__titles">
+                                <h3 class="tenant-card__name">@tenant.Name</h3>
+                                <p class="muted">Creado @Display.DateTime(tenant.CreatedAt)</p>
+                            </div>
+                            @if (isCurrent)
+                            {
+                                <Badge Tone="Tone.Accent" Icon="check">Actual</Badge>
+                            }
+                            else if (!tenant.Enabled)
+                            {
+                                <Badge Tone="Tone.Danger">Deshabilitado</Badge>
+                            }
+                        </header>
+                        <footer class="tenant-card__actions">
+                            @if (!isCurrent)
+                            {
+                                <form method="post" action="account/switch-tenant">
+                                    <AntiforgeryToken />
+                                    <input type="hidden" name="tenantId" value="@tenant.Id" />
+                                    <input type="hidden" name="returnUrl" value="/" />
+                                    <button type="submit" class="btn btn--secondary btn--sm"><Icon Name="arrow-right" Size="14" /> <span class="btn__label">Entrar</span></button>
+                                </form>
+                            }
+                            <span class="spacer"></span>
+                            <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="edit" OnClick="() => Edit(tenant)">Editar</Button>
+                        </footer>
+                    </Card>
+                }
+            </div>
+            <p class="muted hint">Para gestionar los usuarios de otro tenant: entra en él y ve a <strong>Usuarios</strong>.</p>
+        }
+    </ChildContent>
+</PageTemplate>
+
+<ModalDialog @bind-Visible="_editing" Title="@(_id is null ? "Nuevo tenant" : "Editar tenant")" Icon="share">
+    <ChildContent>
+        @if (_error is not null)
+        {
+            <div class="callout callout--danger"><Icon Name="alert" Size="16" /> @_error</div>
+        }
+        <div class="form-grid form-grid--single">
+            <FormField Label="Nombre" For="t-name" Required>
+                <TextInput Id="t-name" @bind-Value="_name" Placeholder="Grupo Mecsa · Costa Rica" />
+            </FormField>
+            <FormField Label="Estado" Help="Los usuarios de un tenant deshabilitado no pueden iniciar sesión; sus trabajos siguen ejecutándose.">
+                <Toggle @bind-Value="_enabled" Label="@(_enabled ? "Habilitado" : "Deshabilitado")" />
+            </FormField>
+        </div>
+        @if (_id is null)
+        {
+            <h4 class="modal__section-title"><Icon Name="shield" Size="16" /> Administrador inicial <span class="muted">(opcional)</span></h4>
+            <div class="form-grid form-grid--single">
+                <FormField Label="Nombre" For="t-admin-name">
+                    <TextInput Id="t-admin-name" @bind-Value="_adminName" Placeholder="Nombre y apellido" />
+                </FormField>
+                <FormField Label="Correo" For="t-admin-email" Help="Tendrá el rol Administrador en el nuevo tenant.">
+                    <TextInput Id="t-admin-email" Type="email" @bind-Value="_adminEmail" Placeholder="ti@cliente.com" />
+                </FormField>
+                @if (!string.IsNullOrWhiteSpace(_adminEmail))
+                {
+                    <FormField Label="Acceso">
+                        <Toggle @bind-Value="_adminInvite" Label="Enviar invitación por correo (usa el SMTP de la plataforma)" />
+                    </FormField>
+                    @if (!_adminInvite)
+                    {
+                        <FormField Label="Contraseña inicial" For="t-admin-pass" Required Help="Mínimo 8 caracteres, con mayúscula, minúscula y número.">
+                            <TextInput Id="t-admin-pass" Type="password" @bind-Value="_adminPassword" />
+                        </FormField>
+                    }
+                }
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <Button Variant="ButtonVariant.Secondary" OnClick="() => _editing = false">Cancelar</Button>
+        <Button Icon="check" OnClick="Save">Guardar</Button>
+    </Footer>
+</ModalDialog>
+
+@code {
+    private IReadOnlyList<Tenant>? _tenants;
+    private bool _editing;
+    private Guid? _id;
+    private string? _name;
+    private bool _enabled = true;
+    private string? _error;
+    private string? _adminName;
+    private string? _adminEmail;
+    private string? _adminPassword;
+    private bool _adminInvite = true;
+
+    protected override async Task OnInitializedAsync() => _tenants = await TenantService.ListAsync();
+
+    private void New()
+    {
+        (_id, _name, _enabled, _error) = (null, null, true, null);
+        (_adminName, _adminEmail, _adminPassword, _adminInvite) = (null, null, null, true);
+        _editing = true;
+    }
+
+    private void Edit(Tenant tenant)
+    {
+        (_id, _name, _enabled, _error) = (tenant.Id, tenant.Name, tenant.Enabled, null);
+        _editing = true;
+    }
+
+    private async Task Save()
+    {
+        var withAdmin = _id is null && !string.IsNullOrWhiteSpace(_adminEmail);
+        if (withAdmin && !_adminInvite && string.IsNullOrEmpty(_adminPassword))
+        {
+            _error = "Indica la contraseña inicial del administrador o envíale una invitación.";
+            return;
+        }
+
+        var (success, error, tenantId) = await TenantService.SaveAsync(_id, _name ?? string.Empty, _enabled);
+        if (!success)
+        {
+            _error = error;
+            return;
+        }
+
+        Toasts.Success(_id is null ? "Tenant creado" : "Tenant actualizado", _name);
+        if (withAdmin)
+        {
+            var admin = await UserAdmin.CreateInTenantAsync(tenantId, new UserEdit(null, _adminEmail!, _adminName ?? string.Empty,
+                AppRoles.Admin, _adminInvite ? null : _adminPassword, _adminInvite));
+            if (admin.Success)
+            {
+                Toasts.Success("Administrador creado", admin.Notice ?? _adminEmail);
+            }
+            else
+            {
+                Toasts.Error("El tenant se creó, pero no su administrador", string.Join(" ", admin.Errors));
+            }
+        }
+        _editing = false;
+        _tenants = await TenantService.ListAsync();
+    }
+}

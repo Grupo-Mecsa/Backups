@@ -1,0 +1,66 @@
+@if (Href is not null)
+{
+    <a href="@Href" class="@CssClass" title="@Title" aria-label="@AriaLabel" @attributes="AdditionalAttributes">
+        @Content
+    </a>
+}
+else
+{
+    <button type="@Type" class="@CssClass" disabled="@(Disabled || Busy)" title="@Title" aria-label="@AriaLabel"
+            @onclick="OnClick" @onclick:stopPropagation="StopPropagation" @attributes="AdditionalAttributes">
+        @Content
+    </button>
+}
+
+@code {
+    [Parameter] public ButtonVariant Variant { get; set; } = ButtonVariant.Primary;
+    [Parameter] public ButtonSize Size { get; set; } = ButtonSize.Medium;
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public string? IconAfter { get; set; }
+    [Parameter] public bool IconOnly { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool StopPropagation { get; set; }
+    [Parameter] public string Type { get; set; } = "button";
+    [Parameter] public string? Href { get; set; }
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? AriaLabel { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public IDictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private string CssClass => string.Join(' ', new[]
+    {
+        "btn",
+        $"btn--{Variant.ToString().ToLowerInvariant()}",
+        Size switch { ButtonSize.Small => "btn--sm", ButtonSize.Large => "btn--lg", _ => null },
+        IconOnly ? "btn--icon" : null,
+        Busy ? "is-busy" : null,
+        Class,
+    }.Where(c => c is not null));
+
+    private int IconSize => Size == ButtonSize.Small ? 14 : 16;
+
+    private RenderFragment Content => __builder =>
+    {
+        if (Busy)
+        {
+            <Spinner Size="IconSize" />
+        }
+        else if (Icon is not null)
+        {
+            <Icon Name="@Icon" Size="IconSize" />
+        }
+
+        if (ChildContent is not null)
+        {
+            <span class="btn__label">@ChildContent</span>
+        }
+
+        if (IconAfter is not null)
+        {
+            <Icon Name="@IconAfter" Size="IconSize" />
+        }
+    };
+}

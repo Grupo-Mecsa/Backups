@@ -1,0 +1,56 @@
+<div class="selection">
+    @if (_selection.IsEmpty)
+    {
+        <p class="selection__empty"><Icon Name="check" Size="14" /> Se incluye todo el contenido de la carpeta raíz.</p>
+    }
+    else
+    {
+        <ul class="selection__chips">
+            @foreach (var path in _selection.Included)
+            {
+                <li class="selection__chip selection__chip--in animate-in" @key="@("+" + path)">
+                    <Icon Name="plus" Size="12" StrokeWidth="3" />
+                    <span class="mono">@(path.Length == 0 ? "(todo)" : path)</span>
+                    <button type="button" aria-label="Quitar regla" @onclick="() => Remove(path)"><Icon Name="x" Size="12" /></button>
+                </li>
+            }
+            @foreach (var path in _selection.Excluded)
+            {
+                <li class="selection__chip selection__chip--out animate-in" @key="@("-" + path)">
+                    <Icon Name="x" Size="12" StrokeWidth="3" />
+                    <span class="mono">@(path.Length == 0 ? "(todo)" : path)</span>
+                    <button type="button" aria-label="Quitar regla" @onclick="() => Remove(path)"><Icon Name="x" Size="12" /></button>
+                </li>
+            }
+        </ul>
+    }
+    <div class="selection__actions">
+        <Button Variant="ButtonVariant.Secondary" Size="ButtonSize.Small" Icon="folder" Disabled="!CanBrowse" OnClick="() => OnBrowse.InvokeAsync()">
+            Elegir en el explorador
+        </Button>
+        @if (!_selection.IsEmpty)
+        {
+            <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="refresh" OnClick="() => ValueChanged.InvokeAsync(null)">Incluir todo</Button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public bool CanBrowse { get; set; } = true;
+    [Parameter] public EventCallback OnBrowse { get; set; }
+
+    private PathSelection _selection = PathSelection.Empty;
+
+    protected override void OnParametersSet() => _selection = PathSelection.Parse(Value);
+
+    /// <summary>Quita una regla: la ruta vuelve a heredar el estado de su carpeta superior.</summary>
+    private Task Remove(string path)
+    {
+        var rules = Value?.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(r => r.Length == 0 || r[1..].Trim('/') != path) ?? [];
+        var serialized = string.Join('\n', rules);
+        return ValueChanged.InvokeAsync(serialized.Length == 0 ? null : serialized);
+    }
+}

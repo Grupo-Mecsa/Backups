@@ -1,0 +1,321 @@
+@* Explorador de carpetas reutilizable. No conoce protocolos: recibe una función que lista una ruta (DIP). *@
+
+@if (Visible)
+{
+    <div class="dialog-backdrop" @onclick="Close">
+        <div class="dialog explorer" role="dialog" aria-modal="true" aria-labelledby="explorer-title" @onclick:stopPropagation>
+            <header class="explorer__header">
+                <span class="explorer__header-icon"><Icon Name="@(Mode == ExplorerMode.SelectItems ? "check" : "folder")" Size="18" /></span>
+                <div class="explorer__titles">
+                    <h2 id="explorer-title" class="explorer__title">@Title</h2>
+                    <p class="explorer__subtitle">@Subtitle</p>
+                </div>
+                <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="x" IconOnly AriaLabel="Cerrar" OnClick="Close" />
+            </header>
+
+            <div class="explorer__toolbar">
+                <Button Variant="ButtonVariant.Secondary" Size="ButtonSize.Small" Icon="chevron-left" IconOnly Title="Carpeta superior"
+                        AriaLabel="Carpeta superior" Disabled="!CanGoUp" OnClick="GoUp" />
+                <nav class="crumbs" aria-label="Ruta">
+                    @{ var crumbs = Crumbs(); }
+                    @for (var i = 0; i < crumbs.Count; i++)
+                    {
+                        var crumb = crumbs[i];
+                        if (i > 0)
+                        {
+                            <Icon Name="chevron-right" Size="12" Class="crumbs__sep" />
+                        }
+                        <button type="button" class="crumbs__item @(i == crumbs.Count - 1 ? "is-current" : null)" @onclick="() => LoadAsync(crumb.Path)">
+                            @crumb.Label
+                        </button>
+                    }
+                </nav>
+                <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="refresh" IconOnly Title="Actualizar" AriaLabel="Actualizar"
+                        OnClick="() => LoadAsync(_listing?.Path)" />
+            </div>
+
+            <div class="explorer__search">
+                <TextInput Icon="search" Placeholder="Buscar en esta carpeta..." Immediate @bind-Value="_filter" />
+            </div>
+
+            <div class="explorer__list" role="list">
+                @if (_loading)
+                {
+                    <div class="explorer__state"><Spinner Size="22" /> <span>Cargando...</span></div>
+                }
+                else if (_error is not null)
+                {
+                    <div class="explorer__state explorer__state--error">
+                        <Icon Name="alert" Size="22" />
+                        <span>@_error</span>
+                        <Button Variant="ButtonVariant.Secondary" Size="ButtonSize.Small" Icon="refresh" OnClick="() => LoadAsync(_requestedPath)">Reintentar</Button>
+                    </div>
+                }
+                else if (_listing is not null)
+                {
+                    @if (Mode == ExplorerMode.SelectItems)
+                    {
+                        var currentRelative = Relative(_listing.Path);
+                        <div class="explorer__row explorer__row--all">
+                            <SelectionCheck State="StateOf(currentRelative)" OnToggle="() => Toggle(currentRelative)" />
+                            <span class="explorer__name">Todo el contenido de esta carpeta</span>
+                        </div>
+                    }
+
+                    var visible = VisibleItems(_listing.Items).ToList();
+                    @if (visible.Count == 0)
+                    {
+                        <div class="explorer__state">
+                            <Icon Name="@(string.IsNullOrWhiteSpace(_filter) ? "folder" : "search")" Size="22" />
+                            <span>@(string.IsNullOrWhiteSpace(_filter) ? "Carpeta vacía" : "Sin coincidencias")</span>
+                        </div>
+                    }
+
+                    @for (var i = 0; i < Math.Min(visible.Count, MaxRows); i++)
+                    {
+                        var item = visible[i];
+                        var relative = Mode == ExplorerMode.SelectItems ? Relative(item.Path) : null;
+                        var state = relative is null ? CheckState.None : StateOf(relative);
+                        <div role="listitem" @key="item.Path" style="--i: @Math.Min(i, 15)"
+                             class="explorer__row animate-in @(item.Path == _pickedFile ? "is-picked" : null) @(Mode == ExplorerMode.SelectItems && state == CheckState.Unchecked ? "is-excluded" : null)">
+                            @if (relative is not null)
+                            {
+                                <SelectionCheck State="state" OnToggle="() => Toggle(relative)" />
+                            }
+                            <button type="button" class="explorer__item" disabled="@(!item.IsDirectory && Mode != ExplorerMode.PickFolderOrFile && relative is null)"
+                                    @onclick="() => Activate(item)" @ondblclick="() => Activate(item, confirm: true)">
+                                <span class="explorer__icon @(item.IsDirectory ? "is-folder" : null)">
+                                    <Icon Name="@(item.IsDirectory ? "folder" : "file")" Size="16" />
+                                </span>
+                                <span class="explorer__name">@Highlight(item.Name)</span>
+                                <span class="explorer__meta">@(item.IsDirectory ? null : ByteSize.Format(item.Size))</span>
+                                <span class="explorer__meta explorer__meta--date">@(item.Modified is null ? null : Display.DateTime(item.Modified))</span>
+                                @if (item.IsDirectory)
+                                {
+                                    <Icon Name="chevron-right" Size="14" Class="explorer__chevron" />
+                                }
+                            </button>
+                        </div>
+                    }
+
+                    @if (visible.Count > MaxRows)
+                    {
+                        <p class="explorer__more">Mostrando @MaxRows de @visible.Count elementos. Usa el buscador para acotar.</p>
+                    }
+                }
+            </div>
+
+            <footer class="explorer__footer">
+                @if (Mode == ExplorerMode.SelectItems)
+                {
+                    <div class="explorer__summary">
+                        @if (_selection.IsEmpty)
+                        {
+                            <Badge Tone="Tone.Success" Icon="check">Se incluye todo</Badge>
+                        }
+                        else
+                        {
+                            <Badge Tone="Tone.Success" Icon="plus">@_selection.Included.Count() incluidos</Badge>
+                            <Badge Tone="Tone.Danger" Icon="x">@_selection.Excluded.Count() excluidos</Badge>
+                            <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="refresh" OnClick="Reset">Restablecer</Button>
+                        }
+                    </div>
+                    <span class="spacer"></span>
+                    <Button Variant="ButtonVariant.Secondary" OnClick="Close">Cancelar</Button>
+                    <Button Icon="check" OnClick="ApplySelection">Aplicar selección</Button>
+                }
+                else
+                {
+                    <div class="explorer__picked mono" title="@PickedPath">@(string.IsNullOrEmpty(PickedPath) ? "—" : PickedPath)</div>
+                    <span class="spacer"></span>
+                    <Button Variant="ButtonVariant.Secondary" OnClick="Close">Cancelar</Button>
+                    <Button Icon="check" Disabled="_listing is null || (string.IsNullOrEmpty(PickedPath) && _listing.Parent is null && _listing.Path.Length == 0)" OnClick="Pick">
+                        @(_pickedFile is not null ? "Elegir archivo" : "Elegir esta carpeta")
+                    </Button>
+                }
+            </footer>
+        </div>
+    </div>
+}
+
+@code {
+    private const int MaxRows = 400;
+
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+    [Parameter] public ExplorerMode Mode { get; set; }
+    [Parameter] public string Title { get; set; } = "Explorar";
+    [Parameter] public string? Subtitle { get; set; }
+
+    /// <summary>Ruta inicial al abrir (en modo selección, también es la raíz de la que no se puede salir).</summary>
+    [Parameter] public string? StartPath { get; set; }
+
+    /// <summary>Reglas actuales (modo selección).</summary>
+    [Parameter] public string? Selection { get; set; }
+
+    [Parameter, EditorRequired] public Func<string?, Task<BrowseResult>> Loader { get; set; } = default!;
+    [Parameter] public EventCallback<string> OnPicked { get; set; }
+    [Parameter] public EventCallback<string> OnSelectionApplied { get; set; }
+
+    private bool _wasVisible;
+    private bool _loading;
+    private string? _error;
+    private string? _requestedPath;
+    private string? _filter;
+    private string? _pickedFile;
+    private FolderListing? _listing;
+    private PathSelection _selection = PathSelection.Empty;
+
+    private string? PickedPath => _pickedFile ?? _listing?.Path;
+
+    private bool CanGoUp => _listing?.Parent is not null
+        && (Mode != ExplorerMode.SelectItems || Relative(_listing.Path).Length > 0);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Visible && !_wasVisible)
+        {
+            _selection = PathSelection.Parse(Selection);
+            _filter = null;
+            _pickedFile = null;
+            _listing = null;
+            await LoadAsync(StartPath);
+        }
+
+        _wasVisible = Visible;
+    }
+
+    private async Task LoadAsync(string? path)
+    {
+        _requestedPath = path;
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+
+        var result = await Loader(path);
+        _loading = false;
+        if (result.Listing is null)
+        {
+            _error = result.Error ?? "No se pudo listar la carpeta.";
+            return;
+        }
+
+        _listing = result.Listing;
+        _filter = null;
+        _pickedFile = null;
+    }
+
+    private Task GoUp() => CanGoUp ? LoadAsync(_listing!.Parent) : Task.CompletedTask;
+
+    private async Task Activate(FolderItem item, bool confirm = false)
+    {
+        if (item.IsDirectory)
+        {
+            await LoadAsync(item.Path);
+        }
+        else if (Mode == ExplorerMode.PickFolderOrFile)
+        {
+            _pickedFile = item.Path;
+            if (confirm)
+            {
+                await Pick();
+            }
+        }
+        else if (Mode == ExplorerMode.SelectItems)
+        {
+            Toggle(Relative(item.Path));
+        }
+    }
+
+    private IEnumerable<FolderItem> VisibleItems(IEnumerable<FolderItem> items) =>
+        Mode == ExplorerMode.PickFolder ? Filter(items).OrderByDescending(i => i.IsDirectory) : Filter(items);
+
+    private IEnumerable<FolderItem> Filter(IEnumerable<FolderItem> items) => string.IsNullOrWhiteSpace(_filter)
+        ? items
+        : items.Where(i => i.Name.Contains(_filter.Trim(), StringComparison.CurrentCultureIgnoreCase));
+
+    private RenderFragment Highlight(string name) => __builder =>
+    {
+        var term = _filter?.Trim();
+        var index = string.IsNullOrEmpty(term) ? -1 : name.IndexOf(term, StringComparison.CurrentCultureIgnoreCase);
+        if (index < 0)
+        {
+            @name
+        }
+        else
+        {
+            @name[..index]<mark>@name.Substring(index, term!.Length)</mark>@name[(index + term.Length)..]
+        }
+    };
+
+    // ---------- Selección ----------
+
+    private string Relative(string path) => PathSelection.Relative(StartPath, path);
+
+    private CheckState StateOf(string relative) =>
+        _selection.IsPartial(relative) ? CheckState.Partial
+        : _selection.IsIncluded(relative) ? CheckState.Checked
+        : CheckState.Unchecked;
+
+    private void Toggle(string relative) =>
+        _selection.Set(relative, StateOf(relative) != CheckState.Checked);
+
+    private void Reset() => _selection = PathSelection.Empty;
+
+    private async Task ApplySelection()
+    {
+        await OnSelectionApplied.InvokeAsync(_selection.Serialize());
+        await Close();
+    }
+
+    private async Task Pick()
+    {
+        await OnPicked.InvokeAsync(PickedPath ?? string.Empty);
+        await Close();
+    }
+
+    private Task Close() => VisibleChanged.InvokeAsync(false);
+
+    // ---------- Migas de pan ----------
+
+    private List<(string Label, string Path)> Crumbs()
+    {
+        var path = _listing?.Path ?? _requestedPath ?? string.Empty;
+        var windows = path.Contains('\\', StringComparison.Ordinal) || (path.Length >= 2 && path[1] == ':');
+        var rooted = path.StartsWith('/');
+        var parts = path.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+
+        var crumbs = new List<(string Label, string Path)> { ("Raíz", rooted ? "/" : string.Empty) };
+        for (var i = 0; i < parts.Length; i++)
+        {
+            var cumulative = windows
+                ? string.Join('\\', parts[..(i + 1)]) + (i == 0 ? "\\" : string.Empty)
+                : (rooted ? "/" : string.Empty) + string.Join('/', parts[..(i + 1)]);
+            crumbs.Add((parts[i], cumulative));
+        }
+
+        if (Mode != ExplorerMode.SelectItems)
+        {
+            return crumbs;
+        }
+
+        // En modo selección no se sale de la raíz configurada.
+        var visible = crumbs.Where(c => IsWithinRoot(c.Path)).ToList();
+        if (visible.Count == 0)
+        {
+            return crumbs;
+        }
+
+        visible[0] = ("Carpeta raíz", visible[0].Path);
+        return visible;
+    }
+
+    private bool IsWithinRoot(string path)
+    {
+        var normalized = PathSelection.Relative(null, path);
+        var root = PathSelection.Relative(null, StartPath ?? string.Empty);
+        return root.Length == 0
+            || string.Equals(normalized, root, StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase);
+    }
+}

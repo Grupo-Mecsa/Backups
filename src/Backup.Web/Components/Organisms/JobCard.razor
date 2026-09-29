@@ -1,0 +1,119 @@
+<Card Index="Index" Interactive Class="@($"job-card {(Job.Enabled ? null : "is-disabled")} {(Busy ? "is-running" : null)}")">
+    <header class="job-card__header">
+        <div class="job-card__titles">
+            <a class="job-card__name" href="@(CanManage ? $"/jobs/{Job.Id}" : $"/runs")">@Job.Name</a>
+            @if (!string.IsNullOrWhiteSpace(Job.Description))
+            {
+                <p class="job-card__desc">@Job.Description</p>
+            }
+        </div>
+        <Toggle Value="Job.Enabled" Disabled="!CanManage" ValueChanged="v => OnToggle.InvokeAsync(v)" />
+    </header>
+
+    <div class="flow">
+        <div class="flow__node">
+            <span class="flow__icon"><Icon Name="@(Source?.Icon ?? "info")" Size="16" /></span>
+            <span class="flow__label">@(Source?.DisplayName ?? Job.Source.ProviderKey)</span>
+        </div>
+        <div class="flow__line @(Busy ? "is-active" : null)"><span></span></div>
+        <div class="flow__node">
+            <span class="flow__icon"><Icon Name="@(Destination?.Icon ?? "info")" Size="16" /></span>
+            <span class="flow__label">@(Destination?.DisplayName ?? Job.Destination.ProviderKey)</span>
+        </div>
+    </div>
+
+    <dl class="meta">
+        <div class="meta__item">
+            <dt><Icon Name="calendar" Size="13" /> Próxima</dt>
+            <dd>
+                @if (NextRun is not null)
+                {
+                    <span title="@Display.DateTime(NextRun)">@Display.Relative(NextRun)</span>
+                }
+                else
+                {
+                    <span class="muted">Manual</span>
+                }
+            </dd>
+        </div>
+        <div class="meta__item">
+            <dt><Icon Name="history" Size="13" /> Última</dt>
+            <dd>
+                @if (Busy)
+                {
+                    <RunStatusBadge Status="RunStatus.Running" />
+                }
+                else if (LastRun is not null)
+                {
+                    <a href="@($"/runs/{LastRun.Id}")" class="meta__run">
+                        <RunStatusBadge Status="LastRun.Status" />
+                        <span class="muted">@Display.Relative(LastRun.StartedAt)</span>
+                    </a>
+                }
+                else
+                {
+                    <span class="muted">Sin ejecuciones</span>
+                }
+            </dd>
+        </div>
+    </dl>
+
+    <div class="job-card__tags">
+        @if (Job.Compression != CompressionKind.None)
+        {
+            <Badge Icon="zap">@Job.Compression</Badge>
+        }
+        @if (Job.IsEncrypted)
+        {
+            <Badge Icon="lock" Tone="Tone.Accent">AES-256</Badge>
+        }
+        @if (!Job.Retention.IsUnlimited)
+        {
+            <Badge Icon="shield">@RetentionLabel</Badge>
+        }
+        @if (Job.Schedule is not null)
+        {
+            <Badge Class="mono">@Job.Schedule</Badge>
+        }
+    </div>
+
+    @if (CanManage)
+    {
+    <footer class="job-card__actions">
+        @if (Busy)
+        {
+            <Button Variant="ButtonVariant.Secondary" Size="ButtonSize.Small" Icon="stop" OnClick="() => OnCancel.InvokeAsync()">Cancelar</Button>
+        }
+        else
+        {
+            <Button Size="ButtonSize.Small" Icon="play" OnClick="() => OnRun.InvokeAsync()">Ejecutar ahora</Button>
+        }
+        <span class="spacer"></span>
+        <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="edit" IconOnly Href="@($"/jobs/{Job.Id}")" Title="Editar" AriaLabel="Editar" />
+        <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="trash" IconOnly Title="Eliminar" AriaLabel="Eliminar"
+                Disabled="Busy" OnClick="() => OnDelete.InvokeAsync()" Class="btn--danger-ghost" />
+    </footer>
+    }
+</Card>
+
+@code {
+    [Parameter, EditorRequired] public BackupJob Job { get; set; } = default!;
+    [Parameter] public ProviderDescriptor? Source { get; set; }
+    [Parameter] public ProviderDescriptor? Destination { get; set; }
+    [Parameter] public BackupRun? LastRun { get; set; }
+    [Parameter] public DateTimeOffset? NextRun { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool CanManage { get; set; } = true;
+    [Parameter] public int Index { get; set; }
+    [Parameter] public EventCallback OnRun { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public EventCallback OnDelete { get; set; }
+    [Parameter] public EventCallback<bool> OnToggle { get; set; }
+
+    private string RetentionLabel => Job.Retention switch
+    {
+        { KeepLast: > 0, KeepDays: > 0 } r => $"{r.KeepLast} / {r.KeepDays} d",
+        { KeepLast: > 0 } r => $"Últimos {r.KeepLast}",
+        var r => $"{r.KeepDays} días",
+    };
+}

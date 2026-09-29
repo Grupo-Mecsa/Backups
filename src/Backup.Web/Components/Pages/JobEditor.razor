@@ -1,0 +1,268 @@
+@page "/jobs/new"
+@attribute [Authorize(Policy = AppPolicies.CanManage)]
+@page "/jobs/{Id:guid}"
+@inject JobService JobService
+@inject IProviderRegistry Registry
+@inject NavigationManager Navigation
+@inject ToastService Toasts
+
+<PageTemplate Title="@(_draft?.IsNew == false ? $"Editar: {_job.Name}" : "Nuevo trabajo")"
+              Subtitle="Configura el origen, el destino y la frecuencia del respaldo"
+              BackHref="/jobs" BackLabel="Trabajos">
+    <ChildContent>
+        @if (_draft is null)
+        {
+            @if (_notFound)
+            {
+                <EmptyState Icon="alert" Title="Trabajo no encontrado">
+                    <Button Href="/jobs" Variant="ButtonVariant.Secondary">Volver a trabajos</Button>
+                </EmptyState>
+            }
+            else
+            {
+                <div class="skeleton skeleton--card"></div>
+            }
+        }
+        else
+        {
+            <StepIndicator Steps="Steps" Current="_step" ErrorSteps="_errorSteps" OnSelect="GoTo" />
+
+            <Card Class="editor" Animate="false">
+                <div class="editor__step" @key="_step">
+                    @switch (_step)
+                    {
+                        case 0:
+                            <h2 class="editor__title">Información general</h2>
+                            <div class="form-grid">
+                                <FormField Label="Nombre" For="name" Required Error="@ErrorFor("Name")"
+                                           Help="@FolderHelp">
+                                    <TextInput Id="name" @bind-Value="_job.Name" Placeholder="ERP producción" Invalid="@(ErrorFor("Name") is not null)" />
+                                </FormField>
+                                <FormField Label="Estado" Help="Un trabajo pausado no se ejecuta según su horario.">
+                                    <Toggle @bind-Value="_job.Enabled" Label="@(_job.Enabled ? "Activo" : "Pausado")" />
+                                </FormField>
+                                <FormField Label="Descripción" For="description" Class="field--wide">
+                                    <TextInput Id="description" Multiline Rows="2" @bind-Value="_job.Description" Placeholder="Opcional" />
+                                </FormField>
+                            </div>
+                            break;
+
+                        case 1:
+                            <h2 class="editor__title">¿Qué quieres respaldar?</h2>
+                            @if (ErrorFor("Source") is { } sourceError)
+                            {
+                                <div class="callout callout--danger"><Icon Name="alert" Size="16" /> @sourceError</div>
+                            }
+                            <ProviderPicker Providers="Registry.Sources" SelectedKey="@_job.Source.ProviderKey"
+                                            SelectedKeyChanged="key => SelectProvider(ProviderRole.Source, key)" />
+                            @if (Registry.Find(ProviderRole.Source, _job.Source.ProviderKey) is { } source)
+                            {
+                                <ProviderSettingsForm Provider="source" Binding="_job.Source" ErrorPrefix="Source" Errors="_errors"
+                                                      HasStoredSecret="key => HasStoredSecret(ProviderRole.Source, key)"
+                                                      OnTestHandler="() => Test(ProviderRole.Source)"
+                                                      OnBrowseHandler="path => Browse(ProviderRole.Source, path)" />
+                            }
+                            break;
+
+                        case 2:
+                            <h2 class="editor__title">¿A dónde se envía?</h2>
+                            @if (ErrorFor("Destination") is { } destinationError)
+                            {
+                                <div class="callout callout--danger"><Icon Name="alert" Size="16" /> @destinationError</div>
+                            }
+                            <ProviderPicker Providers="Registry.Destinations" SelectedKey="@_job.Destination.ProviderKey"
+                                            SelectedKeyChanged="key => SelectProvider(ProviderRole.Destination, key)" />
+                            @if (Registry.Find(ProviderRole.Destination, _job.Destination.ProviderKey) is { } destination)
+                            {
+                                <ProviderSettingsForm Provider="destination" Binding="_job.Destination" ErrorPrefix="Destination" Errors="_errors"
+                                                      HasStoredSecret="key => HasStoredSecret(ProviderRole.Destination, key)"
+                                                      OnTestHandler="() => Test(ProviderRole.Destination)"
+                                                      OnBrowseHandler="path => Browse(ProviderRole.Destination, path)" />
+                            }
+                            break;
+
+                        case 3:
+                            <h2 class="editor__title">¿Cuándo se ejecuta?</h2>
+                            <ScheduleEditor @bind-Schedule="_job.Schedule" @bind-TimeZone="_job.TimeZone" Error="@ErrorFor("Schedule")" />
+                            break;
+
+                        case 4:
+                            <h2 class="editor__title">Opciones</h2>
+                            <JobOptionsEditor Job="_job" @bind-EncryptEnabled="_encrypt" @bind-Passphrase="_passphrase"
+                                              HasStoredPassphrase="_draft.HasStoredSecret(JobSecrets.EncryptionKey)" Errors="_errors" />
+                            break;
+
+                        default:
+                            <h2 class="editor__title">Resumen</h2>
+                            <dl class="summary">
+                                <div><dt>Nombre</dt><dd>@(_job.Name is { Length: > 0 } ? _job.Name : "—")</dd></div>
+                                <div><dt>Origen</dt><dd>@(Registry.Find(ProviderRole.Source, _job.Source.ProviderKey)?.Descriptor.DisplayName ?? "—")</dd></div>
+                                <div><dt>Destino</dt><dd>@(Registry.Find(ProviderRole.Destination, _job.Destination.ProviderKey)?.Descriptor.DisplayName ?? "—")</dd></div>
+                                <div><dt>Horario</dt><dd class="mono">@(_job.Schedule ?? "Manual") <span class="muted">(@_job.TimeZone)</span></dd></div>
+                                <div><dt>Compresión</dt><dd>@_job.Compression</dd></div>
+                                <div><dt>Cifrado</dt><dd>@(_encrypt ? "AES-256" : "No")</dd></div>
+                                <div><dt>Retención</dt><dd>Últimos @_job.Retention.KeepLast · @_job.Retention.KeepDays días</dd></div>
+                                <div><dt>Estado</dt><dd>@(_job.Enabled ? "Activo" : "Pausado")</dd></div>
+                            </dl>
+                            @if (_errors.Count > 0)
+                            {
+                                <div class="callout callout--danger">
+                                    <Icon Name="alert" Size="16" />
+                                    <ul class="plain-list">
+                                        @foreach (var error in _errors)
+                                        {
+                                            <li>@error.Message</li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                            break;
+                    }
+                </div>
+
+                <footer class="editor__footer">
+                    <Button Variant="ButtonVariant.Secondary" Icon="chevron-left" Disabled="_step == 0" OnClick="() => GoTo(_step - 1)">Atrás</Button>
+                    <span class="spacer"></span>
+                    @if (_step < Steps.Length - 1)
+                    {
+                        @if (!_draft.IsNew)
+                        {
+                            <Button Variant="ButtonVariant.Ghost" Icon="check" Busy="_saving" OnClick="Save">Guardar</Button>
+                        }
+                        <Button IconAfter="chevron-right" OnClick="() => GoTo(_step + 1)">Siguiente</Button>
+                    }
+                    else
+                    {
+                        <Button Icon="check" Busy="_saving" OnClick="Save">@(_draft.IsNew ? "Crear trabajo" : "Guardar cambios")</Button>
+                    }
+                </footer>
+            </Card>
+        }
+    </ChildContent>
+</PageTemplate>
+
+@code {
+    private static readonly string[] Steps = ["General", "Origen", "Destino", "Programación", "Opciones", "Resumen"];
+
+    [Parameter] public Guid? Id { get; set; }
+
+    private JobDraft? _draft;
+    private BackupJob _job = new();
+    private bool _notFound;
+    private int _step;
+    private bool _saving;
+    private bool _encrypt;
+    private string? _passphrase;
+    private IReadOnlyList<ValidationError> _errors = [];
+    private IReadOnlySet<int> _errorSteps = new HashSet<int>();
+    private ProviderBinding _originalSource = new();
+    private ProviderBinding _originalDestination = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _draft = Id is { } id ? await JobService.GetForEditAsync(id) : JobService.NewDraft();
+        _notFound = _draft is null;
+        if (_draft is null)
+        {
+            return;
+        }
+
+        _job = _draft.Job;
+        _encrypt = _draft.HasStoredSecret(JobSecrets.EncryptionKey);
+        _originalSource = _job.Source.Clone();
+        _originalDestination = _job.Destination.Clone();
+    }
+
+    private string FolderHelp =>
+        $"Carpeta en el destino: {Backup.Application.Pipeline.ArtifactNaming.Folder(_job.Name ?? string.Empty)}/";
+
+    private void GoTo(int step) => _step = Math.Clamp(step, 0, Steps.Length - 1);
+
+    private string? ErrorFor(string field) => _errors.FirstOrDefault(e => e.Field == field)?.Message;
+
+    private bool HasStoredSecret(ProviderRole role, string key)
+    {
+        var original = role == ProviderRole.Source ? _originalSource : _originalDestination;
+        var current = role == ProviderRole.Source ? _job.Source : _job.Destination;
+        return _draft!.HasStoredSecret(JobSecrets.Key(role, key))
+            && string.Equals(original.ProviderKey, current.ProviderKey, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void SelectProvider(ProviderRole role, string key)
+    {
+        var original = role == ProviderRole.Source ? _originalSource : _originalDestination;
+        ProviderBinding binding;
+        if (string.Equals(original.ProviderKey, key, StringComparison.OrdinalIgnoreCase))
+        {
+            binding = original.Clone();
+        }
+        else
+        {
+            binding = new ProviderBinding { ProviderKey = key };
+            foreach (var field in Registry.Find(role, key)!.Descriptor.Fields.Where(f => f.DefaultValue is not null))
+            {
+                binding.Settings[field.Key] = field.DefaultValue;
+            }
+        }
+
+        if (role == ProviderRole.Source)
+        {
+            _job.Source = binding;
+        }
+        else
+        {
+            _job.Destination = binding;
+        }
+    }
+
+    private Task<ConnectionTestResult> Test(ProviderRole role) =>
+        JobService.TestConnectionAsync(role, role == ProviderRole.Source ? _job.Source : _job.Destination, _draft!.IsNew ? null : _job.Id);
+
+    private Task<BrowseResult> Browse(ProviderRole role, string? path) =>
+        JobService.BrowseAsync(role, role == ProviderRole.Source ? _job.Source : _job.Destination, _draft!.IsNew ? null : _job.Id, path);
+
+    private async Task Save()
+    {
+        _saving = true;
+        try
+        {
+            var errors = new List<ValidationError>();
+            if (_encrypt && string.IsNullOrEmpty(_passphrase) && !_draft!.HasStoredSecret(JobSecrets.EncryptionKey))
+            {
+                errors.Add(new(nameof(BackupJob.EncryptionPassphrase), "Indica la contraseña de cifrado."));
+            }
+
+            if (errors.Count == 0)
+            {
+                _job.EncryptionPassphrase = _encrypt && !string.IsNullOrEmpty(_passphrase) ? _passphrase : null;
+                var result = await JobService.SaveAsync(_job, keepEncryption: _encrypt);
+                if (result.Success)
+                {
+                    Toasts.Success(_draft!.IsNew ? "Trabajo creado" : "Cambios guardados", _job.Name);
+                    Navigation.NavigateTo("/jobs");
+                    return;
+                }
+
+                errors.AddRange(result.Errors);
+            }
+
+            _errors = errors;
+            _errorSteps = errors.Select(e => StepOf(e.Field)).ToHashSet();
+            _step = _errorSteps.Min();
+            Toasts.Error("Revisa el formulario", $"{errors.Count} problema(s) encontrados.");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private static int StepOf(string field) => field switch
+    {
+        "Name" => 0,
+        _ when field.StartsWith("Source", StringComparison.Ordinal) => 1,
+        _ when field.StartsWith("Destination", StringComparison.Ordinal) => 2,
+        "Schedule" => 3,
+        _ => 4,
+    };
+}

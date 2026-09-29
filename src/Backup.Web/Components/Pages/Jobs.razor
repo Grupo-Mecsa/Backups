@@ -1,0 +1,137 @@
+@page "/jobs"
+@inherits LiveComponentBase
+@inject JobService JobService
+@inject DashboardService Dashboard
+@inject IProviderRegistry Registry
+@inject ToastService Toasts
+
+<PageTemplate Title="Trabajos" Subtitle="Define qué respaldar, a dónde y cuándo">
+    <Actions>
+        <div class="search">
+            <TextInput Icon="search" Placeholder="Buscar trabajos..." Immediate @bind-Value="_search" />
+        </div>
+        @if (CurrentUser.CanManage)
+        {
+            <Button Href="/jobs/new" Icon="plus">Nuevo trabajo</Button>
+        }
+    </Actions>
+    <ChildContent>
+        @if (_jobs is null)
+        {
+            <div class="job-grid">
+                @for (var i = 0; i < 3; i++)
+                {
+                    <div class="skeleton skeleton--card"></div>
+                }
+            </div>
+        }
+        else if (_jobs.Count == 0)
+        {
+            <EmptyState Icon="jobs" Title="Todavía no tienes trabajos"
+                        Text="Un trabajo toma datos de un origen (base de datos, carpeta, bucket...) y los guarda en un destino.">
+                @if (CurrentUser.CanManage)
+                {
+                    <Button Href="/jobs/new" Icon="plus">Crear el primero</Button>
+                }
+            </EmptyState>
+        }
+        else if (!Filtered.Any())
+        {
+            <EmptyState Icon="search" Title="Sin resultados" Text="@($"Ningún trabajo coincide con \"{_search}\".")" />
+        }
+        else
+        {
+            <div class="job-grid">
+                @{ var index = 0; }
+                @foreach (var job in Filtered)
+                {
+                    <JobCard @key="job.Id" Job="job" Index="index++"
+                             Source="Registry.Find(ProviderRole.Source, job.Source.ProviderKey)?.Descriptor"
+                             Destination="Registry.Find(ProviderRole.Destination, job.Destination.ProviderKey)?.Descriptor"
+                             LastRun="_lastRuns.GetValueOrDefault(job.Id)"
+                             NextRun="Dashboard.GetNextRun(job)"
+                             Busy="JobService.IsBusy(job.Id)"
+                             CanManage="CurrentUser.CanManage"
+                             OnRun="() => Run(job)"
+                             OnCancel="() => Cancel(job)"
+                             OnDelete="() => AskDelete(job)"
+                             OnToggle="enabled => Toggle(job, enabled)" />
+                }
+            </div>
+        }
+    </ChildContent>
+</PageTemplate>
+
+<ConfirmDialog @bind-Visible="_confirmDelete" Danger Title="¿Eliminar trabajo?" ConfirmText="Eliminar"
+               Message="@($"Se eliminará \"{_pendingDelete?.Name}\". Los respaldos ya guardados en el destino no se borran.")"
+               OnConfirm="Delete" />
+
+@code {
+    private IReadOnlyList<BackupJob>? _jobs;
+    private IReadOnlyDictionary<Guid, BackupRun> _lastRuns = new Dictionary<Guid, BackupRun>();
+    private string? _search;
+    private bool _confirmDelete;
+    private BackupJob? _pendingDelete;
+
+    private IEnumerable<BackupJob> Filtered => string.IsNullOrWhiteSpace(_search)
+        ? _jobs ?? []
+        : (_jobs ?? []).Where(j => j.Name.Contains(_search, StringComparison.CurrentCultureIgnoreCase)
+            || (j.Description?.Contains(_search, StringComparison.CurrentCultureIgnoreCase) ?? false));
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    protected override async Task OnRunChangedAsync(BackupRun run) =>
+        _lastRuns = await Dashboard.GetLastRunsAsync();
+
+    private async Task LoadAsync()
+    {
+        _jobs = await JobService.ListAsync();
+        _lastRuns = await Dashboard.GetLastRunsAsync();
+    }
+
+    private async Task Run(BackupJob job)
+    {
+        if (await JobService.RunNowAsync(job.Id))
+        {
+            Toasts.Info("Respaldo en cola", job.Name);
+        }
+        else
+        {
+            Toasts.Error("Ya está en ejecución", job.Name);
+        }
+    }
+
+    private async Task Cancel(BackupJob job)
+    {
+        if (await JobService.CancelAsync(job.Id))
+        {
+            Toasts.Info("Cancelando...", job.Name);
+        }
+    }
+
+    private async Task Toggle(BackupJob job, bool enabled)
+    {
+        await JobService.SetEnabledAsync(job.Id, enabled);
+        job.Enabled = enabled;
+        Toasts.Success(enabled ? "Trabajo activado" : "Trabajo pausado", job.Name);
+    }
+
+    private void AskDelete(BackupJob job)
+    {
+        _pendingDelete = job;
+        _confirmDelete = true;
+    }
+
+    private async Task Delete()
+    {
+        if (_pendingDelete is null)
+        {
+            return;
+        }
+
+        await JobService.DeleteAsync(_pendingDelete.Id);
+        Toasts.Success("Trabajo eliminado", _pendingDelete.Name);
+        _pendingDelete = null;
+        await LoadAsync();
+    }
+}

@@ -1,0 +1,29 @@
+<div class="provider-picker">
+    @{ var index = 0; }
+    @foreach (var group in Providers.GroupBy(p => p.Descriptor.Category))
+    {
+        <div class="provider-picker__group">
+            <h4 class="provider-picker__heading">@Display.Category(group.Key)</h4>
+            <div class="provider-picker__grid">
+                @foreach (var provider in group)
+                {
+                    <ProviderTile Descriptor="provider.Descriptor" Index="index++"
+                                  Selected="@string.Equals(provider.Descriptor.Key, SelectedKey, StringComparison.OrdinalIgnoreCase)"
+                                  OnSelect="Select" />
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IEnumerable<IProvider> Providers { get; set; } = [];
+    [Parameter] public string? SelectedKey { get; set; }
+    [Parameter] public EventCallback<string> SelectedKeyChanged { get; set; }
+
+    private Task Select(string key)
+    {
+        SelectedKey = key;
+        return SelectedKeyChanged.InvokeAsync(key);
+    }
+}

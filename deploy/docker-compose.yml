@@ -1,0 +1,26 @@
+# Despliegue en servidor (sin servicios de prueba).
+# Uso:  docker compose up -d        (la imagen backuphub:latest se carga con `docker load`)
+services:
+  backup:
+    image: backuphub:latest
+    container_name: backuphub
+    restart: unless-stopped
+    ports:
+      - "${BACKUP_PORT:-8090}:8080"
+    environment:
+      TZ: ${TZ:-America/Costa_Rica}
+      Backup__DisplayTimeZone: ${TZ:-America/Costa_Rica}
+      Backup__MaxConcurrentRuns: "2"
+      Bootstrap__AdminEmail: ${BACKUP_ADMIN_EMAIL:-admin@backup.local}
+      Bootstrap__AdminPassword: ${BACKUP_ADMIN_PASSWORD:-}
+      Bootstrap__TenantName: ${BACKUP_TENANT_NAME:-Principal}
+    volumes:
+      - backup-data:/data          # base SQLite + llaves de cifrado: ¡inclúyelo en tus respaldos!
+      - backup-files:/backups      # destino "Carpeta local"
+    labels:
+      # Imagen local (no está en un registro): watchtower no debe intentar actualizarla.
+      com.centurylinklabs.watchtower.enable: "false"
+
+volumes:
+  backup-data:
+  backup-files:

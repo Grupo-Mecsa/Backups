@@ -1,0 +1,19 @@
+@switch (Status)
+{
+    case RunStatus.Running:
+        <Badge Tone="Tone.Info" Dot Pulse>En curso</Badge>
+        break;
+    case RunStatus.Succeeded:
+        <Badge Tone="Tone.Success" Icon="check">Correcto</Badge>
+        break;
+    case RunStatus.Failed:
+        <Badge Tone="Tone.Danger" Icon="x">Falló</Badge>
+        break;
+    case RunStatus.Cancelled:
+        <Badge Tone="Tone.Warning" Icon="stop">Cancelado</Badge>
+        break;
+}
+
+@code {
+    [Parameter, EditorRequired] public RunStatus Status { get; set; }
+}

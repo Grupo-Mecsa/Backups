@@ -1,0 +1,50 @@
+@page "/runs"
+@inherits LiveComponentBase
+@inject DashboardService Dashboard
+@inject JobService JobService
+
+<PageTemplate Title="Historial" Subtitle="Todas las ejecuciones, en vivo">
+    <Actions>
+        <div class="filter">
+            <SelectInput Placeholder="Todos los trabajos" Options="_jobOptions" Value="@_jobFilter?.ToString()" ValueChanged="Filter" />
+        </div>
+    </Actions>
+    <ChildContent>
+        <Card Animate="false">
+            @if (_runs is null)
+            {
+                <div class="skeleton skeleton--table"></div>
+            }
+            else if (_runs.Count == 0)
+            {
+                <EmptyState Icon="history" Title="Sin ejecuciones" Text="Cuando un trabajo se ejecute aparecerá aquí." />
+            }
+            else
+            {
+                <RunTable Runs="_runs" ShowJob="_jobFilter is null" />
+            }
+        </Card>
+    </ChildContent>
+</PageTemplate>
+
+@code {
+    private IReadOnlyList<BackupRun>? _runs;
+    private IEnumerable<SelectOption> _jobOptions = [];
+    private Guid? _jobFilter;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _jobOptions = (await JobService.ListAsync()).Select(j => new SelectOption(j.Id.ToString(), j.Name)).ToList();
+        await LoadAsync();
+    }
+
+    protected override Task OnRunChangedAsync(BackupRun run) => LoadAsync();
+
+    private async Task Filter(string? value)
+    {
+        _jobFilter = Guid.TryParse(value, out var id) ? id : null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => _runs = await Dashboard.ListRunsAsync(_jobFilter, 200);
+}

@@ -1,0 +1,57 @@
+@inject NavigationManager Navigation
+
+<div class="table-wrap">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Estado</th>
+                @if (ShowJob)
+                {
+                    <th>Trabajo</th>
+                }
+                <th>Inicio</th>
+                <th>Duración</th>
+                <th class="num">Tamaño</th>
+                <th>Origen</th>
+                <th aria-label="Abrir"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @for (var i = 0; i < Runs.Count; i++)
+            {
+                var run = Runs[i];
+                <tr class="table__row animate-in" style="--i: @Math.Min(i, 12)" @onclick="() => Open(run)">
+                    <td><RunStatusBadge Status="run.Status" /></td>
+                    @if (ShowJob)
+                    {
+                        <td class="strong">@run.JobName</td>
+                    }
+                    <td>
+                        <span title="@Display.DateTime(run.StartedAt)">@Display.DateTime(run.StartedAt)</span>
+                    </td>
+                    <td class="muted">@(run.Status == RunStatus.Running ? "…" : Display.Duration(run.Duration))</td>
+                    <td class="num">@ByteSize.Format(run.SizeBytes)</td>
+                    <td>
+                        <Badge Icon="@(run.Trigger == RunTrigger.Scheduled ? "clock" : "play")">
+                            @(run.Trigger == RunTrigger.Scheduled ? "Programado" : "Manual")
+                        </Badge>
+                    </td>
+                    <td class="table__chevron"><Icon Name="chevron-right" Size="16" /></td>
+                </tr>
+                @if (run.Status == RunStatus.Failed && !string.IsNullOrEmpty(run.Error))
+                {
+                    <tr class="table__error-row" @onclick="() => Open(run)">
+                        <td colspan="@(ShowJob ? 7 : 6)"><Icon Name="alert" Size="13" /> @run.Error</td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<BackupRun> Runs { get; set; } = [];
+    [Parameter] public bool ShowJob { get; set; } = true;
+
+    private void Open(BackupRun run) => Navigation.NavigateTo($"/runs/{run.Id}");
+}

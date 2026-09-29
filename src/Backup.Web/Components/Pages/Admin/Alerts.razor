@@ -1,0 +1,201 @@
+@page "/admin/alerts"
+@attribute [Authorize(Policy = AppPolicies.CanManage)]
+@using Backup.Application.Notifications
+@using Backup.Domain.Notifications
+@inject NotificationService Notifications
+@inject ToastService Toasts
+
+<PageTemplate Title="Alertas" Subtitle="Avisos por correo y Telegram cuando un respaldo falla (o también cuando termina bien)">
+    <ChildContent>
+        @if (_settings is null)
+        {
+            <div class="skeleton skeleton--card"></div>
+        }
+        else
+        {
+            <Card Class="editor" Animate="false">
+                <div class="options">
+                    <section class="options__section">
+                        <header class="options__header">
+                            <Icon Name="mail" /> <h3>Alertas</h3>
+                            <Toggle @bind-Value="_settings.Enabled" Label="@(_settings.Enabled ? "Activadas" : "Desactivadas")" />
+                        </header>
+                        <div class="form-grid">
+                            <FormField Label="Avisar cuando">
+                                <div class="stack">
+                                    <Toggle @bind-Value="_settings.NotifyOnFailure" Label="Un respaldo falla o se cancela" />
+                                    <Toggle @bind-Value="_settings.NotifyOnSuccess" Label="Un respaldo termina correctamente" />
+                                </div>
+                            </FormField>
+                            <FormField Label="Destinatarios" For="recipients" Required Error="@ErrorFor(nameof(NotificationSettings.Recipients))"
+                                       Help="Separados por coma o uno por línea." Class="field--wide">
+                                <TextInput Id="recipients" Multiline Rows="2" @bind-Value="_settings.Recipients" Placeholder="soporte@empresa.com, ti@empresa.com" />
+                            </FormField>
+                        </div>
+                    </section>
+
+                    <section class="options__section">
+                        <header class="options__header">
+                            <Icon Name="server" /> <h3>Servidor SMTP</h3>
+                        </header>
+                        @if (Notifications.PlatformSender is { } platformSender)
+                        {
+                            <Toggle @bind-Value="_settings.UsePlatformSmtp" Label="@($"Usar el servidor de la plataforma (envía como {platformSender})")" />
+                        }
+                        @if (ErrorFor(nameof(NotificationSettings.UsePlatformSmtp)) is { } platformError)
+                        {
+                            <div class="callout callout--danger"><Icon Name="alert" Size="16" /> <span>@platformError</span></div>
+                        }
+                        @if (!_settings.UsePlatformSmtp)
+                        {
+                        <div class="chips">
+                            @foreach (var preset in Presets)
+                            {
+                                <button type="button" class="chip" @onclick="() => ApplyPreset(preset)"><Icon Name="zap" Size="14" /> @preset.Name</button>
+                            }
+                        </div>
+                        <div class="form-grid">
+                            <FormField Label="Servidor" For="host" Required Error="@ErrorFor(nameof(NotificationSettings.SmtpHost))">
+                                <TextInput Id="host" @bind-Value="_settings.SmtpHost" Placeholder="smtp.office365.com" />
+                            </FormField>
+                            <FormField Label="Puerto" For="port" Error="@ErrorFor(nameof(NotificationSettings.SmtpPort))">
+                                <TextInput Id="port" Type="number" Min="1" Value="@_settings.SmtpPort.ToString()" ValueChanged="SetPort" />
+                            </FormField>
+                            <FormField Label="Seguridad" For="security" Help="587 → STARTTLS · 465 → SSL/TLS · 25 → ninguna.">
+                                <SelectInput Id="security" Options="SecurityOptions" Value="@_settings.Security.ToString()" ValueChanged="SetSecurity" />
+                            </FormField>
+                            <FormField Label="Usuario" For="smtp-user" Help="Vacío si el servidor no requiere autenticación.">
+                                <TextInput Id="smtp-user" @bind-Value="_settings.Username" Placeholder="alertas@empresa.com" />
+                            </FormField>
+                            <FormField Label="Contraseña" For="smtp-pass" Hint="@(_hasPassword ? "guardada" : null)">
+                                <TextInput Id="smtp-pass" Type="password" @bind-Value="_settings.Password"
+                                           Placeholder="@(_hasPassword ? "•••••••• (sin cambios)" : null)" />
+                            </FormField>
+                            <FormField Label="Remitente" For="from" Required Error="@ErrorFor(nameof(NotificationSettings.FromAddress))">
+                                <TextInput Id="from" Type="email" @bind-Value="_settings.FromAddress" Placeholder="alertas@empresa.com" />
+                            </FormField>
+                            <FormField Label="Nombre del remitente" For="from-name">
+                                <TextInput Id="from-name" Value="@_settings.FromName" ValueChanged="v => _settings.FromName = v ?? string.Empty" />
+                            </FormField>
+                        </div>
+                        }
+                    </section>
+                </div>
+
+                @if (_testResult is not null)
+                {
+                    <div class="callout callout--@(_testResult.Success ? "success" : "danger") animate-in"><Icon Name="@(_testResult.Success ? "check" : "alert")" Size="16" /> <span>@_testResult.Message</span></div>
+                }
+
+                <footer class="editor__footer">
+                    <Button Variant="ButtonVariant.Secondary" Icon="send" Busy="_testing" OnClick="SendTest">Enviar correo de prueba</Button>
+                    <span class="spacer"></span>
+                    <Button Icon="check" Busy="_saving" OnClick="Save">Guardar</Button>
+                </footer>
+            </Card>
+
+            <Card Class="editor" Animate="false">
+                <header class="options__header">
+                    <Icon Name="send" /> <h3>Telegram</h3>
+                </header>
+                <p class="muted editor__lead">Chats vinculados a este tenant. Cada usuario conecta el suyo (o un grupo) desde <a href="account/profile">Mi cuenta</a>.</p>
+                <TelegramChats TenantWide />
+            </Card>
+        }
+    </ChildContent>
+</PageTemplate>
+
+@code {
+    private sealed record Preset(string Name, string Host, int Port, SmtpSecurity Security);
+
+    private static readonly Preset[] Presets =
+    [
+        new("Microsoft 365", "smtp.office365.com", 587, SmtpSecurity.StartTls),
+        new("Gmail / Workspace", "smtp.gmail.com", 587, SmtpSecurity.StartTls),
+        new("Zoho", "smtp.zoho.com", 465, SmtpSecurity.SslOnConnect),
+        new("SendGrid", "smtp.sendgrid.net", 587, SmtpSecurity.StartTls),
+    ];
+
+    private static readonly SelectOption[] SecurityOptions =
+    [
+        new(nameof(SmtpSecurity.Auto), "Automática"),
+        new(nameof(SmtpSecurity.StartTls), "STARTTLS"),
+        new(nameof(SmtpSecurity.SslOnConnect), "SSL/TLS"),
+        new(nameof(SmtpSecurity.None), "Ninguna"),
+    ];
+
+    private NotificationSettings? _settings;
+    private bool _hasPassword;
+    private bool _saving;
+    private bool _testing;
+    private ConnectionTestResult? _testResult;
+    private IReadOnlyList<ValidationError> _errors = [];
+
+    protected override async Task OnInitializedAsync() => (_settings, _hasPassword) = await Notifications.GetAsync();
+
+    private string? ErrorFor(string field) => _errors.FirstOrDefault(e => e.Field == field)?.Message;
+
+    private void SetPort(string? value) => _settings!.SmtpPort = int.TryParse(value, out var port) ? port : 0;
+
+    private void SetSecurity(string? value) => _settings!.Security = Enum.TryParse<SmtpSecurity>(value, out var security) ? security : SmtpSecurity.Auto;
+
+    private void ApplyPreset(Preset preset)
+    {
+        _settings!.SmtpHost = preset.Host;
+        _settings.SmtpPort = preset.Port;
+        _settings.Security = preset.Security;
+    }
+
+    private async Task Save()
+    {
+        _saving = true;
+        try
+        {
+            _errors = await Notifications.SaveAsync(Copy());
+            if (_errors.Count == 0)
+            {
+                Toasts.Success("Alertas guardadas");
+                (_settings, _hasPassword) = await Notifications.GetAsync();
+            }
+            else
+            {
+                Toasts.Error("Revisa el formulario");
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task SendTest()
+    {
+        _testing = true;
+        _testResult = null;
+        try
+        {
+            _testResult = await Notifications.SendTestAsync(Copy());
+        }
+        finally
+        {
+            _testing = false;
+        }
+    }
+
+    /// <summary>El servicio modifica la instancia (p. ej. rellena la contraseña guardada); se trabaja sobre una copia.</summary>
+    private NotificationSettings Copy() => new()
+    {
+        Enabled = _settings!.Enabled,
+        UsePlatformSmtp = _settings.UsePlatformSmtp,
+        SmtpHost = _settings.SmtpHost,
+        SmtpPort = _settings.SmtpPort,
+        Security = _settings.Security,
+        Username = _settings.Username,
+        Password = _settings.Password,
+        FromAddress = _settings.FromAddress,
+        FromName = _settings.FromName,
+        Recipients = _settings.Recipients,
+        NotifyOnFailure = _settings.NotifyOnFailure,
+        NotifyOnSuccess = _settings.NotifyOnSuccess,
+    };
+}

@@ -1,0 +1,274 @@
+@page "/admin/users"
+@attribute [Authorize(Policy = AppPolicies.CanManage)]
+@inject IUserAdministration UserAdmin
+@inject CurrentUser Me
+@inject ToastService Toasts
+
+<PageTemplate Title="Usuarios" Subtitle="Quién puede acceder a este tenant y con qué permisos">
+    <Actions>
+        <div class="search">
+            <TextInput Icon="search" Placeholder="Buscar usuarios..." Immediate @bind-Value="_search" />
+        </div>
+        <Button Icon="plus" OnClick="New">Nuevo usuario</Button>
+    </Actions>
+    <ChildContent>
+        <div class="role-legend">
+            <div><Badge Tone="Tone.Accent" Icon="shield">Administrador</Badge> <span class="muted">Gestiona trabajos, usuarios y alertas.</span></div>
+            <div><Badge Icon="user">Lector</Badge> <span class="muted">Solo consulta el panel, trabajos e historial.</span></div>
+        </div>
+
+        <Card Animate="false">
+            @if (_users is null)
+            {
+                <div class="skeleton skeleton--table"></div>
+            }
+            else if (!Filtered.Any())
+            {
+                <EmptyState Icon="users" Title="Sin usuarios" Text="@(string.IsNullOrWhiteSpace(_search) ? null : "Ningún usuario coincide con la búsqueda.")" />
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Usuario</th>
+                                <th>Rol</th>
+                                <th>Estado</th>
+                                <th>Último acceso</th>
+                                <th aria-label="Acciones"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{ var i = 0; }
+                            @foreach (var user in Filtered)
+                            {
+                                <tr class="animate-in" style="--i: @(i++)" @key="user.Id">
+                                    <td>
+                                        <div class="user-cell">
+                                            <span class="user-card__avatar">@Initials(user)</span>
+                                            <div>
+                                                <p class="strong">@(string.IsNullOrWhiteSpace(user.DisplayName) ? user.Email : user.DisplayName)
+                                                    @if (user.Id == Me.UserId)
+                                                    {
+                                                        <Badge Class="ml">Tú</Badge>
+                                                    }
+                                                </p>
+                                                <p class="muted">@user.Email</p>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td><Badge Tone="@(user.Role == AppRoles.Reader ? Tone.Neutral : Tone.Accent)" Icon="@(user.Role == AppRoles.Reader ? "user" : "shield")">@AppRoles.Label(user.Role)</Badge></td>
+                                    <td>
+                                        @if (user.IsLocked)
+                                        {
+                                            <Badge Tone="Tone.Danger" Icon="lock">Bloqueado</Badge>
+                                        }
+                                        else
+                                        {
+                                            <Badge Tone="Tone.Success" Dot>Activo</Badge>
+                                        }
+                                    </td>
+                                    <td class="muted">@Display.Relative(user.LastLoginAt)</td>
+                                    <td class="table__actions">
+                                        @if (CanEdit(user))
+                                        {
+                                            <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="edit" IconOnly Title="Editar" AriaLabel="Editar" OnClick="() => Edit(user)" />
+                                            @if (user.Id != Me.UserId)
+                                            {
+                                                @if (_canEmail && !user.IsLocked)
+                                                {
+                                                    <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="send" IconOnly
+                                                            Title="@(user.LastLoginAt is null ? "Reenviar invitación" : "Enviar enlace para restablecer contraseña")"
+                                                            AriaLabel="Enviar enlace de acceso" OnClick="() => SendLink(user)" />
+                                                }
+                                                <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="@(user.IsLocked ? "key" : "lock")" IconOnly
+                                                        Title="@(user.IsLocked ? "Desbloquear" : "Bloquear")" AriaLabel="Bloquear o desbloquear" OnClick="() => ToggleLock(user)" />
+                                                <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="trash" IconOnly Title="Eliminar" AriaLabel="Eliminar"
+                                                        Class="btn--danger-ghost" OnClick="() => AskDelete(user)" />
+                                            }
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </Card>
+    </ChildContent>
+</PageTemplate>
+
+<ModalDialog @bind-Visible="_editing" Title="@(_form.Id is null ? "Nuevo usuario" : "Editar usuario")" Icon="user">
+    <ChildContent>
+        @if (_errors.Count > 0)
+        {
+            <div class="callout callout--danger"><Icon Name="alert" Size="16" />
+                <ul class="plain-list">@foreach (var error in _errors) { <li>@error</li> }</ul>
+            </div>
+        }
+        <div class="form-grid form-grid--single">
+            <FormField Label="Nombre" For="u-name">
+                <TextInput Id="u-name" @bind-Value="_form.DisplayName" Placeholder="Nombre y apellido" />
+            </FormField>
+            <FormField Label="Correo" For="u-email" Required Help="Se usa para iniciar sesión.">
+                <TextInput Id="u-email" Type="email" @bind-Value="_form.Email" />
+            </FormField>
+            <FormField Label="Rol" For="u-role" Help="@(_form.Id == Me.UserId ? "No puedes cambiar tu propio rol." : null)">
+                <SelectInput Id="u-role" Options="RoleOptions" @bind-Value="_form.Role" Disabled="_form.Id == Me.UserId" />
+            </FormField>
+            @if (_form.Id is null)
+            {
+                <FormField Label="Acceso" Help="@(_canEmail ? null : "Configura un servidor SMTP (plataforma o Alertas) para enviar invitaciones.")">
+                    <Toggle @bind-Value="_form.SendInvitation" Disabled="!_canEmail" Label="Enviar invitación por correo para que defina su contraseña" />
+                </FormField>
+            }
+            @if (_form.Id is not null || !_form.SendInvitation)
+            {
+                <FormField Label="@(_form.Id is null ? "Contraseña inicial" : "Nueva contraseña")" For="u-pass" Required="_form.Id is null"
+                           Help="@(_form.Id is null ? "Mínimo 8 caracteres, con mayúscula, minúscula y número." : "Déjala vacía para no cambiarla.")">
+                    <TextInput Id="u-pass" Type="password" @bind-Value="_form.Password" />
+                </FormField>
+            }
+        </div>
+    </ChildContent>
+    <Footer>
+        <Button Variant="ButtonVariant.Secondary" OnClick="() => _editing = false">Cancelar</Button>
+        <Button Icon="check" Busy="_saving" OnClick="Save">Guardar</Button>
+    </Footer>
+</ModalDialog>
+
+<ConfirmDialog @bind-Visible="_confirmDelete" Danger Title="¿Eliminar usuario?" ConfirmText="Eliminar"
+               Message="@($"{_pendingDelete?.Email} perderá el acceso de inmediato.")" OnConfirm="Delete" />
+
+@code {
+    private IReadOnlyList<UserSummary>? _users;
+    private string? _search;
+    private bool _editing;
+    private bool _saving;
+    private bool _canEmail;
+    private bool _confirmDelete;
+    private UserSummary? _pendingDelete;
+    private FormModel _form = new();
+    private IReadOnlyList<string> _errors = [];
+
+    private IEnumerable<SelectOption> RoleOptions =>
+        (Me.IsSuperAdmin ? AppRoles.All : AppRoles.TenantAssignable).Select(r => new SelectOption(r, AppRoles.Label(r)));
+
+    private IEnumerable<UserSummary> Filtered => string.IsNullOrWhiteSpace(_search)
+        ? _users ?? []
+        : (_users ?? []).Where(u => u.Email.Contains(_search, StringComparison.CurrentCultureIgnoreCase)
+            || u.DisplayName.Contains(_search, StringComparison.CurrentCultureIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        _users = await UserAdmin.ListAsync();
+        _canEmail = await UserAdmin.CanSendEmailAsync();
+    }
+
+    private bool CanEdit(UserSummary user) => Me.IsSuperAdmin || user.Role != AppRoles.SuperAdmin;
+
+    private static string Initials(UserSummary user) => string.Concat(
+        (string.IsNullOrWhiteSpace(user.DisplayName) ? user.Email : user.DisplayName)
+            .Split(' ', '@', '.').Where(p => p.Length > 0).Take(2).Select(p => char.ToUpperInvariant(p[0])));
+
+    private void New()
+    {
+        _form = new FormModel { SendInvitation = _canEmail };
+        _errors = [];
+        _editing = true;
+    }
+
+    private void Edit(UserSummary user)
+    {
+        _form = new FormModel { Id = user.Id, Email = user.Email, DisplayName = user.DisplayName, Role = user.Role };
+        _errors = [];
+        _editing = true;
+    }
+
+    private async Task Save()
+    {
+        _saving = true;
+        try
+        {
+            var invite = _form.Id is null && _form.SendInvitation;
+            var result = await UserAdmin.SaveAsync(new UserEdit(_form.Id, _form.Email ?? string.Empty, _form.DisplayName ?? string.Empty,
+                _form.Role ?? AppRoles.Reader, invite ? null : _form.Password, invite));
+            if (!result.Success)
+            {
+                _errors = result.Errors;
+                return;
+            }
+
+            Toasts.Success(_form.Id is null ? "Usuario creado" : "Usuario actualizado", result.Notice ?? _form.Email);
+            _editing = false;
+            _users = await UserAdmin.ListAsync();
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ToggleLock(UserSummary user)
+    {
+        var result = await UserAdmin.SetLockedAsync(user.Id, !user.IsLocked);
+        if (result.Success)
+        {
+            Toasts.Success(user.IsLocked ? "Usuario desbloqueado" : "Usuario bloqueado", user.Email);
+            _users = await UserAdmin.ListAsync();
+        }
+        else
+        {
+            Toasts.Error("No se pudo actualizar", string.Join(" ", result.Errors));
+        }
+    }
+
+    private async Task SendLink(UserSummary user)
+    {
+        var result = await UserAdmin.SendAccessLinkAsync(user.Id);
+        if (result.Success)
+        {
+            Toasts.Success("Correo enviado", result.Notice);
+        }
+        else
+        {
+            Toasts.Error("No se pudo enviar", string.Join(" ", result.Errors));
+        }
+    }
+
+    private void AskDelete(UserSummary user)
+    {
+        _pendingDelete = user;
+        _confirmDelete = true;
+    }
+
+    private async Task Delete()
+    {
+        if (_pendingDelete is null)
+        {
+            return;
+        }
+
+        var result = await UserAdmin.DeleteAsync(_pendingDelete.Id);
+        if (result.Success)
+        {
+            Toasts.Success("Usuario eliminado", _pendingDelete.Email);
+            _users = await UserAdmin.ListAsync();
+        }
+        else
+        {
+            Toasts.Error("No se pudo eliminar", string.Join(" ", result.Errors));
+        }
+    }
+
+    private sealed class FormModel
+    {
+        public string? Id { get; set; }
+        public string? Email { get; set; }
+        public string? DisplayName { get; set; }
+        public string? Role { get; set; } = AppRoles.Reader;
+        public string? Password { get; set; }
+        public bool SendInvitation { get; set; }
+    }
+}

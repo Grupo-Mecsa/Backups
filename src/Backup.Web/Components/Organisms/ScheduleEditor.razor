@@ -1,0 +1,105 @@
+@using Backup.Application.Abstractions
+@inject IScheduleCalculator Calculator
+
+<div class="schedule">
+    <div class="chips" role="group" aria-label="Frecuencias predefinidas">
+        @foreach (var preset in Presets)
+        {
+            <button type="button" class="chip @(IsActive(preset.Cron) ? "is-active" : null)" @onclick="() => SetSchedule(preset.Cron)">
+                <Icon Name="@preset.Icon" Size="14" /> @preset.Label
+            </button>
+        }
+    </div>
+
+    <div class="form-grid">
+        <FormField Label="Expresión cron" For="cron" Error="@Error"
+                   Help="minuto hora día-del-mes mes día-de-la-semana. Ej.: 30 1 * * 1-5 = lunes a viernes a la 01:30.">
+            <TextInput Id="cron" Mono Value="@Schedule" Placeholder="Solo ejecución manual" Invalid="Error is not null"
+                       ValueChanged="SetSchedule" />
+        </FormField>
+        <FormField Label="Zona horaria" For="tz" Help="Zona usada para interpretar la expresión.">
+            <TextInput Id="tz" Value="@TimeZone" List="tz-list" Icon="clock" ValueChanged="SetTimeZone" />
+            <datalist id="tz-list">
+                @foreach (var zone in Zones)
+                {
+                    <option value="@zone"></option>
+                }
+            </datalist>
+        </FormField>
+    </div>
+
+    @if (Schedule is null)
+    {
+        <div class="callout callout--info"><Icon Name="info" Size="16" /> Este trabajo solo se ejecutará manualmente.</div>
+    }
+    else if (_preview.Count > 0)
+    {
+        <div class="schedule__preview">
+            <p class="schedule__preview-title">Próximas ejecuciones</p>
+            <ul>
+                @for (var i = 0; i < _preview.Count; i++)
+                {
+                    <li class="animate-in" style="--i: @i"><Icon Name="calendar" Size="14" /> @Display.DateTime(_preview[i])</li>
+                }
+            </ul>
+        </div>
+    }
+</div>
+
+@code {
+    private sealed record Preset(string Label, string? Cron, string Icon);
+
+    private static readonly Preset[] Presets =
+    [
+        new("Manual", null, "pause"),
+        new("Cada hora", "0 * * * *", "refresh"),
+        new("Cada 6 horas", "0 */6 * * *", "clock"),
+        new("Diario 02:00", "0 2 * * *", "moon"),
+        new("Semanal (dom 03:00)", "0 3 * * 0", "calendar"),
+        new("Mensual (día 1)", "0 4 1 * *", "calendar"),
+    ];
+
+    private static readonly string[] Zones = [.. TimeZoneInfo.GetSystemTimeZones().Select(z => z.Id).Append("UTC").Distinct().Order()];
+
+    [Parameter] public string? Schedule { get; set; }
+    [Parameter] public EventCallback<string?> ScheduleChanged { get; set; }
+    [Parameter] public string TimeZone { get; set; } = "UTC";
+    [Parameter] public EventCallback<string> TimeZoneChanged { get; set; }
+    [Parameter] public string? Error { get; set; }
+
+    private List<DateTimeOffset> _preview = [];
+
+    protected override void OnParametersSet() => UpdatePreview();
+
+    private bool IsActive(string? cron) => string.Equals(Schedule?.Trim(), cron, StringComparison.Ordinal);
+
+    private async Task SetSchedule(string? value)
+    {
+        Schedule = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        UpdatePreview();
+        await ScheduleChanged.InvokeAsync(Schedule);
+    }
+
+    private async Task SetTimeZone(string? value)
+    {
+        TimeZone = string.IsNullOrWhiteSpace(value) ? "UTC" : value.Trim();
+        UpdatePreview();
+        await TimeZoneChanged.InvokeAsync(TimeZone);
+    }
+
+    private void UpdatePreview()
+    {
+        _preview = [];
+        if (Schedule is null || !Calculator.TryValidate(Schedule, TimeZone, out _))
+        {
+            return;
+        }
+
+        var cursor = DateTimeOffset.UtcNow;
+        for (var i = 0; i < 4 && Calculator.GetNextOccurrence(Schedule, TimeZone, cursor) is { } next; i++)
+        {
+            _preview.Add(next);
+            cursor = next;
+        }
+    }
+}

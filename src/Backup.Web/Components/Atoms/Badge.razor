@@ -1,0 +1,20 @@
+<span class="badge badge--@Tone.ToString().ToLowerInvariant() @Class">
+    @if (Dot)
+    {
+        <span class="badge__dot @(Pulse ? "is-pulsing" : null)"></span>
+    }
+    else if (Icon is not null)
+    {
+        <Icon Name="@Icon" Size="12" StrokeWidth="2.5" />
+    }
+    @ChildContent
+</span>
+
+@code {
+    [Parameter] public Tone Tone { get; set; } = Tone.Neutral;
+    [Parameter] public bool Dot { get; set; }
+    [Parameter] public bool Pulse { get; set; }
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

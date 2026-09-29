@@ -1,0 +1,19 @@
+<div class="empty animate-in">
+    <div class="empty__icon"><Icon Name="@Icon" Size="28" StrokeWidth="1.6" /></div>
+    <h3 class="empty__title">@Title</h3>
+    @if (Text is not null)
+    {
+        <p class="empty__text">@Text</p>
+    }
+    @if (ChildContent is not null)
+    {
+        <div class="empty__actions">@ChildContent</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Icon { get; set; } = "info";
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string? Text { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

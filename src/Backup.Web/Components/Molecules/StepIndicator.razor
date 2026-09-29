@@ -1,0 +1,35 @@
+<ol class="steps" style="--progress: @Progress">
+    @for (var i = 0; i < Steps.Count; i++)
+    {
+        var index = i;
+        var step = Steps[i];
+        <li class="steps__item @(index == Current ? "is-current" : null) @(index < Current ? "is-done" : null) @(ErrorSteps.Contains(index) ? "has-error" : null)">
+            <button type="button" class="steps__button" @onclick="() => OnSelect.InvokeAsync(index)">
+                <span class="steps__marker">
+                    @if (ErrorSteps.Contains(index))
+                    {
+                        <Icon Name="alert" Size="14" />
+                    }
+                    else if (index < Current)
+                    {
+                        <Icon Name="check" Size="14" StrokeWidth="3" />
+                    }
+                    else
+                    {
+                        @(index + 1)
+                    }
+                </span>
+                <span class="steps__label">@step</span>
+            </button>
+        </li>
+    }
+</ol>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<string> Steps { get; set; } = [];
+    [Parameter] public int Current { get; set; }
+    [Parameter] public IReadOnlySet<int> ErrorSteps { get; set; } = new HashSet<int>();
+    [Parameter] public EventCallback<int> OnSelect { get; set; }
+
+    private string Progress => Steps.Count <= 1 ? "0" : (Current / (double)(Steps.Count - 1)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+}

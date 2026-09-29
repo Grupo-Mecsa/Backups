@@ -1,0 +1,19 @@
+@* Casilla de tres estados (incluido / excluido / parcial). El checkbox nativo no expone "parcial" sin JS. *@
+<button type="button" role="checkbox" class="check check--@State.ToString().ToLowerInvariant()"
+        aria-checked="@(State switch { CheckState.Checked => "true", CheckState.Partial => "mixed", _ => "false" })"
+        aria-label="@AriaLabel" @onclick="() => OnToggle.InvokeAsync()" @onclick:stopPropagation>
+    @if (State == CheckState.Checked)
+    {
+        <Icon Name="check" Size="12" StrokeWidth="3.5" />
+    }
+    else if (State == CheckState.Partial)
+    {
+        <span class="check__dash"></span>
+    }
+</button>
+
+@code {
+    [Parameter] public CheckState State { get; set; }
+    [Parameter] public string AriaLabel { get; set; } = "Incluir";
+    [Parameter] public EventCallback OnToggle { get; set; }
+}

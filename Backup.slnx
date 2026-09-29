@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Backup.Application/Backup.Application.csproj" />
+    <Project Path="src/Backup.Domain/Backup.Domain.csproj" />
+    <Project Path="src/Backup.Infrastructure/Backup.Infrastructure.csproj" />
+    <Project Path="src/Backup.Providers.Cloud/Backup.Providers.Cloud.csproj" />
+    <Project Path="src/Backup.Providers.Databases/Backup.Providers.Databases.csproj" />
+    <Project Path="src/Backup.Providers.Files/Backup.Providers.Files.csproj" />
+    <Project Path="src/Backup.Web/Backup.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Backup.Tests/Backup.Tests.csproj" />
+  </Folder>
+</Solution>

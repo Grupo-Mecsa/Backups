@@ -1,0 +1,140 @@
+@page "/runs/{Id:guid}"
+@inherits LiveComponentBase
+@inject DashboardService Dashboard
+@inject JobService JobService
+@inject ToastService Toasts
+
+<PageTemplate Title="@(_run?.JobName ?? "Ejecución")" Subtitle="@(_run is null ? null : $"Iniciada {Display.DateTime(_run.StartedAt)}")"
+              BackHref="/runs" BackLabel="Historial">
+    <Actions>
+        @if (_run is not null && CurrentUser.CanManage)
+        {
+            @if (_run.Status == RunStatus.Running)
+            {
+                <Button Variant="ButtonVariant.Secondary" Icon="stop" OnClick="Cancel">Cancelar</Button>
+            }
+            else
+            {
+                <Button Variant="ButtonVariant.Secondary" Icon="refresh" OnClick="RunAgain">Ejecutar de nuevo</Button>
+            }
+            <Button Variant="ButtonVariant.Ghost" Icon="edit" Href="@($"/jobs/{_run.JobId}")">Editar trabajo</Button>
+        }
+    </Actions>
+    <ChildContent>
+        @if (_run is null)
+        {
+            @if (_notFound)
+            {
+                <EmptyState Icon="alert" Title="Ejecución no encontrada" />
+            }
+            else
+            {
+                <div class="skeleton skeleton--card"></div>
+            }
+        }
+        else
+        {
+            @if (_run.Status == RunStatus.Running)
+            {
+                <div class="progress" aria-label="En curso"><span></span></div>
+            }
+
+            <div class="stats">
+                <Card Index="0" Class="kv">
+                    <p class="kv__label">Estado</p>
+                    <RunStatusBadge Status="_run.Status" />
+                </Card>
+                <Card Index="1" Class="kv">
+                    <p class="kv__label">Duración</p>
+                    <p class="kv__value">@(_run.Status == RunStatus.Running ? Display.Relative(_run.StartedAt).Replace("hace ", "") : Display.Duration(_run.Duration))</p>
+                </Card>
+                <Card Index="2" Class="kv">
+                    <p class="kv__label">Tamaño</p>
+                    <p class="kv__value">@ByteSize.Format(_run.SizeBytes)</p>
+                </Card>
+                <Card Index="3" Class="kv">
+                    <p class="kv__label">Retención</p>
+                    <p class="kv__value">@(_run.DeletedByRetention) eliminados</p>
+                </Card>
+            </div>
+
+            @if (_run.Error is not null)
+            {
+                <div class="callout callout--danger animate-in"><Icon Name="alert" Size="16" /> <span>@_run.Error</span></div>
+            }
+
+            <Card Index="4">
+                <dl class="summary">
+                    <div><dt>Archivo</dt><dd class="mono break">@(_run.ArtifactName ?? "—")</dd></div>
+                    <div><dt>SHA-256</dt><dd class="mono break">@(_run.Sha256 ?? "—")</dd></div>
+                    <div><dt>Disparador</dt><dd>@(_run.Trigger == RunTrigger.Scheduled ? "Programado" : "Manual")</dd></div>
+                    <div><dt>Finalizó</dt><dd>@Display.DateTime(_run.FinishedAt)</dd></div>
+                </dl>
+            </Card>
+
+            <Card Index="5" Class="log-card">
+                <header class="card__header">
+                    <h2 class="card__title">Bitácora</h2>
+                    @if (_run.Status == RunStatus.Running)
+                    {
+                        <Badge Tone="Tone.Info" Dot Pulse>En vivo</Badge>
+                    }
+                </header>
+                <pre class="log">@foreach (var line in _run.Log.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+{<span class="log__line @LineClass(line)">@line</span>
+}</pre>
+            </Card>
+        }
+    </ChildContent>
+</PageTemplate>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private BackupRun? _run;
+    private bool _notFound;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _run = await Dashboard.GetRunAsync(Id);
+        _notFound = _run is null;
+    }
+
+    protected override async Task OnRunChangedAsync(BackupRun run)
+    {
+        if (run.Id == Id)
+        {
+            _run = await Dashboard.GetRunAsync(Id);
+        }
+    }
+
+    private static string? LineClass(string line) =>
+        line.Contains(" ERR ", StringComparison.Ordinal) ? "log__line--error"
+        : line.Contains(" WRN ", StringComparison.Ordinal) ? "log__line--warn"
+        : null;
+
+    private async Task Cancel()
+    {
+        if (_run is not null && await JobService.CancelAsync(_run.JobId))
+        {
+            Toasts.Info("Cancelando ejecución...");
+        }
+    }
+
+    private async Task RunAgain()
+    {
+        if (_run is null)
+        {
+            return;
+        }
+
+        if (await JobService.RunNowAsync(_run.JobId))
+        {
+            Toasts.Info("Respaldo en cola", _run.JobName);
+        }
+        else
+        {
+            Toasts.Error("Ya está en ejecución", _run.JobName);
+        }
+    }
+}

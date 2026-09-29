@@ -1,0 +1,24 @@
+namespace Backup.Providers.Files.Abstractions;
+
+/// <summary>
+/// Sesión sobre un sistema de archivos remoto (FTP, SFTP, SMB, disco local).
+/// Las rutas usan '/' como separador; cada implementación las adapta a su protocolo.
+/// </summary>
+public interface IFileSession : IAsyncDisposable
+{
+    /// <summary>Carpeta en la que el servidor deja al usuario al iniciar sesión (punto de partida del explorador).</summary>
+    string HomeDirectory => "/";
+
+    /// <summary>Sube un archivo creando las carpetas intermedias necesarias.</summary>
+    Task UploadAsync(string localFile, string remotePath, CancellationToken cancellationToken);
+
+    /// <summary>Lista el contenido directo de una carpeta. Carpeta inexistente = lista vacía.</summary>
+    Task<IReadOnlyList<RemoteEntry>> ListAsync(string remoteDirectory, CancellationToken cancellationToken);
+
+    Task DownloadAsync(string remotePath, string localFile, CancellationToken cancellationToken);
+
+    Task DeleteAsync(string remotePath, CancellationToken cancellationToken);
+}
+
+/// <param name="Path">Ruta completa con '/' como separador.</param>
+public sealed record RemoteEntry(string Path, string Name, bool IsDirectory, DateTimeOffset? Modified, long? Size);

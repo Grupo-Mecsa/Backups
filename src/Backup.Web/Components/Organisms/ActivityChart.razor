@@ -1,0 +1,40 @@
+@using System.Globalization
+
+<div class="chart" role="img" aria-label="Ejecuciones de los últimos 7 días">
+    <div class="chart__bars">
+        @for (var i = 0; i < Days.Count; i++)
+        {
+            var day = Days[i];
+            var total = day.Succeeded + day.Failed;
+            <div class="chart__col" title="@($"{day.Day:dd MMM}: {day.Succeeded} correctas, {day.Failed} fallidas")">
+                <div class="chart__stack" style="--h: @Percent(total); --i: @i">
+                    @if (day.Failed > 0)
+                    {
+                        <span class="chart__seg chart__seg--failed" style="flex: @day.Failed"></span>
+                    }
+                    @if (day.Succeeded > 0)
+                    {
+                        <span class="chart__seg chart__seg--ok" style="flex: @day.Succeeded"></span>
+                    }
+                </div>
+                <span class="chart__value">@(total > 0 ? total : null)</span>
+                <span class="chart__label">@day.Day.ToString("ddd", Culture)</span>
+            </div>
+        }
+    </div>
+    <div class="chart__legend">
+        <span><i class="chart__swatch chart__swatch--ok"></i> Correctas</span>
+        <span><i class="chart__swatch chart__swatch--failed"></i> Fallidas</span>
+    </div>
+</div>
+
+@code {
+    private static readonly CultureInfo Culture = CultureInfo.GetCultureInfo("es");
+
+    [Parameter, EditorRequired] public IReadOnlyList<DailyRunStat> Days { get; set; } = [];
+
+    private int Max => Math.Max(1, Days.Count == 0 ? 1 : Days.Max(d => d.Succeeded + d.Failed));
+
+    private string Percent(int value) =>
+        (value == 0 ? 0.04 : Math.Max(0.08, value / (double)Max)).ToString("0.###", CultureInfo.InvariantCulture);
+}

@@ -1,0 +1,14 @@
+<section class="card @(Interactive ? "card--interactive" : null) @(Animate ? "animate-in" : null) @Class" style="--i: @Index">
+    @ChildContent
+</section>
+
+@code {
+    [Parameter] public bool Interactive { get; set; }
+    [Parameter] public bool Animate { get; set; } = true;
+
+    /// <summary>Posición en una lista, para escalonar la animación de entrada.</summary>
+    [Parameter] public int Index { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

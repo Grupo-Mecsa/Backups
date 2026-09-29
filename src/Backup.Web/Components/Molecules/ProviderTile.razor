@@ -1,0 +1,16 @@
+<button type="button" class="provider-tile @(Selected ? "is-selected" : null) animate-in" style="--i: @Index"
+        aria-pressed="@Selected" @onclick="() => OnSelect.InvokeAsync(Descriptor.Key)">
+    <span class="provider-tile__icon"><Icon Name="@Descriptor.Icon" Size="22" /></span>
+    <span class="provider-tile__text">
+        <span class="provider-tile__name">@Descriptor.DisplayName</span>
+        <span class="provider-tile__desc">@Descriptor.Description</span>
+    </span>
+    <span class="provider-tile__check"><Icon Name="check" Size="14" StrokeWidth="3" /></span>
+</button>
+
+@code {
+    [Parameter, EditorRequired] public ProviderDescriptor Descriptor { get; set; } = default!;
+    [Parameter] public bool Selected { get; set; }
+    [Parameter] public int Index { get; set; }
+    [Parameter] public EventCallback<string> OnSelect { get; set; }
+}

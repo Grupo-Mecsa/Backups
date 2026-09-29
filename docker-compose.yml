@@ -1,0 +1,67 @@
+services:
+  backup:
+    build: .
+    image: backuphub:latest
+    container_name: backuphub
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      TZ: UTC                               # zona horaria del contenedor
+      Backup__DisplayTimeZone: ""           # p. ej. America/Mexico_City para mostrar fechas en la UI
+      Backup__MaxConcurrentRuns: "2"
+      # SuperAdmin creado en el primer arranque (si no hay usuarios). Sin contraseña → se genera y se muestra en `docker logs`.
+      Bootstrap__AdminEmail: ${BACKUP_ADMIN_EMAIL:-admin@backup.local}
+      Bootstrap__AdminPassword: ${BACKUP_ADMIN_PASSWORD:-}
+      Bootstrap__TenantName: ${BACKUP_TENANT_NAME:-Principal}
+      Notifications__Webhook__Url: ""       # Teams / Slack / n8n (opcional)
+    volumes:
+      - backup-data:/data                   # base SQLite + llaves de cifrado (¡respáldalo!)
+      - backup-files:/backups               # destino "Carpeta local" de ejemplo
+      # - /ruta/del/host:/mnt/origen:ro     # carpetas del host a respaldar
+      # - ./keys:/keys:ro                   # llaves privadas SFTP
+
+  # ---------- Servicios de prueba: docker compose --profile demo up ----------
+  postgres:
+    profiles: ["demo"]
+    image: postgres:17
+    container_name: backuphub-postgres
+    environment:
+      POSTGRES_PASSWORD: demo1234
+      POSTGRES_DB: tienda
+    command: >
+      bash -c "docker-entrypoint.sh postgres &
+      until pg_isready -U postgres; do sleep 1; done;
+      psql -U postgres -d tienda -c \"CREATE TABLE IF NOT EXISTS productos(id serial primary key, nombre text, precio numeric);
+      INSERT INTO productos(nombre, precio) SELECT 'Producto ' || g, g * 1.5 FROM generate_series(1, 5000) g;\";
+      wait"
+
+  # S3 compatible. Endpoint: http://s3:8333 · access key: demo · secret key: demo1234
+  s3:
+    profiles: ["demo"]
+    image: chrislusf/seaweedfs:latest
+    container_name: backuphub-s3
+    command: server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    configs:
+      - source: seaweed-s3
+        target: /etc/seaweedfs/s3.json
+    ports:
+      - "8333:8333"
+
+  # SFTP de prueba. Usuario demo / demo1234, carpeta escribible: /respaldos
+  sftp:
+    profiles: ["demo"]
+    image: atmoz/sftp:latest
+    container_name: backuphub-sftp
+    command: demo:demo1234:::respaldos
+    ports:
+      - "2222:22"
+
+configs:
+  seaweed-s3:
+    content: |
+      {"identities":[{"name":"demo","credentials":[{"accessKey":"demo","secretKey":"demo1234"}],"actions":["Admin","Read","Write","List","Tagging"]}]}
+
+volumes:
+  backup-data:
+  backup-files:

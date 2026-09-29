@@ -1,0 +1,108 @@
+@using Backup.Application.Tenants
+@using Backup.Domain.Tenants
+@inject IJSRuntime JS
+@inject CurrentUser User
+@inject TenantService TenantService
+@inject NavigationManager Navigation
+
+<aside class="sidebar">
+    <a href="/" class="sidebar__brand">
+        <span class="sidebar__logo"><Icon Name="logo" Size="20" /></span>
+        <span class="sidebar__title">Backup<span class="sidebar__title-accent">Hub</span></span>
+    </a>
+
+    @if (User.IsSuperAdmin && _tenants.Count > 0)
+    {
+        <form method="post" action="account/switch-tenant" class="tenant-switch">
+            <AntiforgeryToken />
+            <input type="hidden" name="returnUrl" value="@("/" + Navigation.ToBaseRelativePath(Navigation.Uri))" />
+            <label class="tenant-switch__label" for="tenant-switch">Tenant</label>
+            <div class="select-wrap">
+                <select id="tenant-switch" name="tenantId" class="input input--select" onchange="this.form.submit()">
+                    @foreach (var tenant in _tenants)
+                    {
+                        <option value="@tenant.Id" selected="@(tenant.Id == User.TenantId)">@tenant.Name@(tenant.Enabled ? null : " (deshabilitado)")</option>
+                    }
+                </select>
+                <Icon Name="chevron-right" Size="14" Class="select-wrap__chevron" />
+            </div>
+        </form>
+    }
+    else if (_tenantName is not null)
+    {
+        <div class="tenant-chip"><Icon Name="share" Size="14" /> <span>@_tenantName</span></div>
+    }
+
+    <nav class="sidebar__nav" aria-label="Principal">
+        <NavLink class="sidebar__link" href="/" Match="NavLinkMatch.All">
+            <Icon Name="dashboard" /> <span>Panel</span>
+        </NavLink>
+        <NavLink class="sidebar__link" href="/jobs">
+            <Icon Name="jobs" /> <span>Trabajos</span>
+        </NavLink>
+        <NavLink class="sidebar__link" href="/runs">
+            <Icon Name="history" /> <span>Historial</span>
+        </NavLink>
+
+        @if (User.CanManage)
+        {
+            <p class="sidebar__section">Administración</p>
+            <NavLink class="sidebar__link" href="/admin/users">
+                <Icon Name="users" /> <span>Usuarios</span>
+            </NavLink>
+            <NavLink class="sidebar__link" href="/admin/alerts">
+                <Icon Name="mail" /> <span>Alertas</span>
+            </NavLink>
+        }
+        @if (User.IsSuperAdmin)
+        {
+            <NavLink class="sidebar__link" href="/admin/tenants">
+                <Icon Name="share" /> <span>Tenants</span>
+            </NavLink>
+        }
+    </nav>
+
+    <div class="sidebar__footer">
+        @if (User.CanManage)
+        {
+            <Button Variant="ButtonVariant.Ghost" Icon="plus" Href="/jobs/new" Class="sidebar__cta">Nuevo trabajo</Button>
+        }
+
+        <div class="user-card">
+            <a href="/account/profile" class="user-card__main" title="Mi cuenta">
+                <span class="user-card__avatar">@Initials</span>
+                <span class="user-card__text">
+                    <span class="user-card__name">@User.DisplayName</span>
+                    <span class="user-card__role">@AppRoles.Label(User.Role ?? AppRoles.Reader)</span>
+                </span>
+            </a>
+            <button type="button" class="user-card__icon" @onclick="ToggleTheme" aria-label="Cambiar tema" title="Cambiar tema">
+                <Icon Name="sun" Size="16" Class="theme-icon theme-icon--light" />
+                <Icon Name="moon" Size="16" Class="theme-icon theme-icon--dark" />
+            </button>
+            <form method="post" action="account/logout">
+                <AntiforgeryToken />
+                <button type="submit" class="user-card__icon" aria-label="Cerrar sesión" title="Cerrar sesión"><Icon Name="logout" Size="16" /></button>
+            </form>
+        </div>
+    </div>
+</aside>
+
+@code {
+    private IReadOnlyList<Tenant> _tenants = [];
+    private string? _tenantName;
+
+    private string Initials => string.Concat((User.DisplayName ?? "?")
+        .Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(p => char.ToUpperInvariant(p[0])));
+
+    protected override async Task OnInitializedAsync()
+    {
+        _tenantName = await TenantService.GetCurrentNameAsync();
+        if (User.IsSuperAdmin)
+        {
+            _tenants = await TenantService.ListAsync();
+        }
+    }
+
+    private async Task ToggleTheme() => await JS.InvokeAsync<string>("backupTheme.toggle");
+}

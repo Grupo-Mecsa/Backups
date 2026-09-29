@@ -1,0 +1,22 @@
+<Card Index="Index" Class="stat">
+    <div class="stat__icon stat__icon--@Tone.ToString().ToLowerInvariant()">
+        <Icon Name="@Icon" Size="20" />
+    </div>
+    <div class="stat__body">
+        <p class="stat__label">@Label</p>
+        <p class="stat__value">@Value</p>
+        @if (Caption is not null)
+        {
+            <p class="stat__caption">@Caption</p>
+        }
+    </div>
+</Card>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
+    [Parameter] public string? Caption { get; set; }
+    [Parameter] public string Icon { get; set; } = "info";
+    [Parameter] public Tone Tone { get; set; } = Tone.Accent;
+    [Parameter] public int Index { get; set; }
+}

@@ -1,0 +1,6 @@
+<span class="spinner @Class" style="--spinner-size: @(Size)px" role="status" aria-label="Cargando"></span>
+
+@code {
+    [Parameter] public int Size { get; set; } = 18;
+    [Parameter] public string? Class { get; set; }
+}

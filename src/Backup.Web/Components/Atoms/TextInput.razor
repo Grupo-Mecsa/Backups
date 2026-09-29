@@ -1,0 +1,48 @@
+@if (Multiline)
+{
+    <textarea id="@Id" class="input input--textarea @(Invalid ? "is-invalid" : null) @(Mono ? "input--mono" : null)"
+              placeholder="@Placeholder" disabled="@Disabled" rows="@Rows"
+              value="@Value" @onchange="HandleChange" aria-invalid="@Invalid"></textarea>
+}
+else
+{
+    <div class="input-wrap @(Icon is not null ? "has-icon" : null)">
+        @if (Icon is not null)
+        {
+            <Icon Name="@Icon" Size="16" Class="input-wrap__icon" />
+        }
+        <input id="@Id" type="@Type" class="input @(Invalid ? "is-invalid" : null) @(Mono ? "input--mono" : null)"
+               placeholder="@Placeholder" disabled="@Disabled" autocomplete="@(Type == "password" ? "new-password" : "off")"
+               list="@List" min="@Min" value="@Value" aria-invalid="@Invalid"
+               @onchange="HandleChange" @oninput="HandleInput" />
+    </div>
+}
+
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public string Type { get; set; } = "text";
+    [Parameter] public string? Id { get; set; }
+    [Parameter] public string? Placeholder { get; set; }
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public string? List { get; set; }
+    [Parameter] public string? Min { get; set; }
+    [Parameter] public bool Invalid { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool Multiline { get; set; }
+    [Parameter] public bool Mono { get; set; }
+    [Parameter] public int Rows { get; set; } = 3;
+
+    /// <summary>Notificar en cada tecla (útil para búsquedas) en lugar de al perder el foco.</summary>
+    [Parameter] public bool Immediate { get; set; }
+
+    private Task HandleChange(ChangeEventArgs e) => Immediate ? Task.CompletedTask : Update(e);
+
+    private Task HandleInput(ChangeEventArgs e) => Immediate ? Update(e) : Task.CompletedTask;
+
+    private Task Update(ChangeEventArgs e)
+    {
+        Value = e.Value?.ToString();
+        return ValueChanged.InvokeAsync(Value);
+    }
+}

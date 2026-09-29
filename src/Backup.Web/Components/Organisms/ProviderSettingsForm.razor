@@ -1,0 +1,196 @@
+@* Formulario generado a partir del descriptor del proveedor: agregar un proveedor no requiere cambios aquí. *@
+@inject ToastService Toasts
+
+<div class="settings-form">
+    <div class="settings-form__header">
+        <span class="settings-form__icon"><Icon Name="@Provider.Descriptor.Icon" Size="20" /></span>
+        <div>
+            <h3 class="settings-form__title">@Provider.Descriptor.DisplayName</h3>
+            <p class="settings-form__desc">@Provider.Descriptor.Description</p>
+        </div>
+        @if (Provider is IConnectionTester && OnTestHandler is not null)
+        {
+            <Button Variant="ButtonVariant.Secondary" Icon="plug" Busy="_testing" OnClick="TestAsync" Class="settings-form__test">
+                Probar conexión
+            </Button>
+        }
+    </div>
+
+    @if (_testResult is not null)
+    {
+        <div class="callout callout--@(_testResult.Success ? "success" : "danger") animate-in" role="status">
+            <Icon Name="@(_testResult.Success ? "check" : "alert")" Size="16" />
+            <span>@_testResult.Message</span>
+        </div>
+    }
+
+    <div class="form-grid">
+        @foreach (var field in Provider.Descriptor.Fields)
+        {
+            var id = $"{ErrorPrefix}-{field.Key}";
+            var error = ErrorFor(field.Key);
+            var stored = field.IsSecret && HasStoredSecret(field.Key);
+            <FormField Label="@field.Label" For="@id" Required="field.Required && !stored" Help="@field.Help" Error="@error"
+                       Hint="@(stored ? "guardada" : null)"
+                       Class="@WideClass(field)">
+                @switch (field.Type)
+                {
+                    case SettingFieldType.Toggle:
+                        <Toggle Value="@GetBool(field)" ValueChanged="v => Set(field.Key, v.ToString().ToLowerInvariant())" />
+                        break;
+                    case SettingFieldType.Select:
+                        <SelectInput Id="@id" Value="@Get(field)" Options="SelectOption.From(field.Options)" Invalid="error is not null"
+                                     ValueChanged="v => Set(field.Key, v)" />
+                        break;
+                    case SettingFieldType.PathSelection when CanBrowse:
+                        <SelectionSummary Value="@Get(field)" ValueChanged="v => Set(field.Key, v)" OnBrowse="() => OpenSelection(field)" />
+                        break;
+                    case SettingFieldType.TextArea:
+                    case SettingFieldType.PathSelection:
+                        <TextInput Id="@id" Multiline Mono="field.Type == SettingFieldType.PathSelection" Value="@Get(field)"
+                                   Placeholder="@field.Placeholder" Invalid="error is not null" ValueChanged="v => Set(field.Key, v)" />
+                        break;
+                    case SettingFieldType.Password:
+                        <TextInput Id="@id" Type="password" Value="@Get(field)" Invalid="error is not null"
+                                   Placeholder="@(stored ? "•••••••• (sin cambios)" : field.Placeholder)"
+                                   ValueChanged="v => Set(field.Key, v)" />
+                        break;
+                    case SettingFieldType.Number:
+                        <TextInput Id="@id" Type="number" Min="0" Value="@Get(field)" Placeholder="@field.Placeholder" Invalid="error is not null"
+                                   ValueChanged="v => Set(field.Key, v)" />
+                        break;
+                    default:
+                        @if (field.Browse != BrowseMode.None && CanBrowse)
+                        {
+                            <div class="input-group">
+                                <TextInput Id="@id" Value="@Get(field)" Placeholder="@field.Placeholder" Invalid="error is not null"
+                                           ValueChanged="v => Set(field.Key, v)" />
+                                <Button Variant="ButtonVariant.Secondary" Icon="folder" Title="Explorar" OnClick="() => OpenPicker(field)">Explorar</Button>
+                            </div>
+                        }
+                        else
+                        {
+                            <TextInput Id="@id" Value="@Get(field)" Placeholder="@field.Placeholder" Invalid="error is not null"
+                                       ValueChanged="v => Set(field.Key, v)" />
+                        }
+                        break;
+                }
+            </FormField>
+        }
+    </div>
+</div>
+
+@if (OnBrowseHandler is not null)
+{
+    <FolderExplorerDialog @bind-Visible="_explorerOpen" Mode="_explorerMode" Title="@_explorerTitle" Subtitle="@_explorerSubtitle"
+                          StartPath="@_explorerStart" Selection="@_explorerSelection" Loader="OnBrowseHandler"
+                          OnPicked="path => Set(_explorerField!, path)" OnSelectionApplied="rules => Set(_explorerField!, rules.Length == 0 ? null : rules)" />
+}
+
+@code {
+    [Parameter, EditorRequired] public IProvider Provider { get; set; } = default!;
+    [Parameter, EditorRequired] public ProviderBinding Binding { get; set; } = default!;
+
+    /// <summary>Prefijo de los errores de validación: "Source" o "Destination".</summary>
+    [Parameter, EditorRequired] public string ErrorPrefix { get; set; } = string.Empty;
+
+    [Parameter] public IReadOnlyList<ValidationError> Errors { get; set; } = [];
+    [Parameter] public Func<string, bool> HasStoredSecret { get; set; } = _ => false;
+    [Parameter] public Func<Task<ConnectionTestResult>>? OnTestHandler { get; set; }
+
+    /// <summary>Lista una ruta con la configuración actual. Si es null, no se ofrece el explorador.</summary>
+    [Parameter] public Func<string?, Task<BrowseResult>>? OnBrowseHandler { get; set; }
+
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private bool _testing;
+    private ConnectionTestResult? _testResult;
+    private string? _lastProviderKey;
+
+    private bool _explorerOpen;
+    private ExplorerMode _explorerMode;
+    private string? _explorerField;
+    private string? _explorerStart;
+    private string? _explorerSelection;
+    private string _explorerTitle = "Explorar";
+    private string? _explorerSubtitle;
+
+    private bool CanBrowse => Provider is IFolderBrowser && OnBrowseHandler is not null;
+
+    protected override void OnParametersSet()
+    {
+        if (_lastProviderKey != Provider.Descriptor.Key)
+        {
+            _lastProviderKey = Provider.Descriptor.Key;
+            _testResult = null;
+            _explorerOpen = false;
+        }
+    }
+
+    private static string? WideClass(SettingField field) =>
+        field.Type is SettingFieldType.TextArea or SettingFieldType.PathSelection || (field.Help?.Length ?? 0) > 70 ? "field--wide" : null;
+
+    private string? Get(SettingField field) => Binding.Settings.GetValueOrDefault(field.Key);
+
+    private bool GetBool(SettingField field) =>
+        bool.TryParse(Binding.Settings.GetValueOrDefault(field.Key) ?? field.DefaultValue, out var value) && value;
+
+    private Task Set(string key, string? value)
+    {
+        Binding.Settings[key] = value;
+        _testResult = null;
+        return OnChanged.InvokeAsync();
+    }
+
+    private void OpenPicker(SettingField field)
+    {
+        _explorerField = field.Key;
+        _explorerMode = field.Browse == BrowseMode.FolderOrFile ? ExplorerMode.PickFolderOrFile : ExplorerMode.PickFolder;
+        _explorerStart = Get(field);
+        _explorerSelection = null;
+        _explorerTitle = $"Elegir: {field.Label}";
+        _explorerSubtitle = "Navega hasta la carpeta y pulsa «Elegir esta carpeta».";
+        _explorerOpen = true;
+    }
+
+    private void OpenSelection(SettingField field)
+    {
+        var rootField = Provider.Descriptor.Fields.FirstOrDefault(f => f.Key == field.BrowseRootField);
+        var root = rootField is null ? null : Get(rootField);
+        if (rootField?.Required == true && string.IsNullOrWhiteSpace(root))
+        {
+            Toasts.Error("Primero indica la carpeta", $"Completa «{rootField.Label}» para elegir qué respaldar.");
+            return;
+        }
+
+        _explorerField = field.Key;
+        _explorerMode = ExplorerMode.SelectItems;
+        _explorerStart = root;
+        _explorerSelection = Get(field);
+        _explorerTitle = "Qué respaldar";
+        _explorerSubtitle = $"Marca lo que se incluye y desmarca lo que se excluye dentro de {(string.IsNullOrWhiteSpace(root) ? "la raíz" : root)}.";
+        _explorerOpen = true;
+    }
+
+    private string? ErrorFor(string key) =>
+        Errors.FirstOrDefault(e => string.Equals(e.Field, $"{ErrorPrefix}.{key}", StringComparison.OrdinalIgnoreCase))?.Message;
+
+    private async Task TestAsync()
+    {
+        if (OnTestHandler is null)
+        {
+            return;
+        }
+
+        _testing = true;
+        _testResult = null;
+        try
+        {
+            _testResult = await OnTestHandler();
+        }
+        finally
+        {
+            _testing = false;
+        }
+    }
+}

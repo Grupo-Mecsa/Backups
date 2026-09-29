@@ -1,0 +1,170 @@
+@using Backup.Application.Telegram
+@using Backup.Domain.Notifications
+@implements IDisposable
+@inject TelegramService Telegram
+@inject TelegramBotCommands BotCommands
+@inject ICurrentUser Me
+@inject ToastService Toasts
+
+@* Chats de Telegram vinculados: los del usuario (Mi cuenta) o los de todo el tenant (Alertas). *@
+@if (!Telegram.IsAvailable)
+{
+    <div class="callout callout--info"><Icon Name="info" Size="16" />
+        <span>El bot de Telegram no está configurado. El operador debe definir <code>Telegram__BotToken</code> con el token de @@BotFather.</span>
+    </div>
+}
+else
+{
+    @if (AllowConnect)
+    {
+        <div class="telegram-connect">
+            @if (_link is null)
+            {
+                <p class="muted">Vincula tu chat privado o un grupo para recibir las alertas de <strong>este tenant</strong>.</p>
+                <Button Icon="send" OnClick="CreateLink">Conectar Telegram</Button>
+            }
+            else
+            {
+                <div class="telegram-connect__steps animate-in">
+                    <p><strong>1.</strong> Abre el bot y pulsa <strong>Iniciar</strong>, o agrégalo a un grupo:</p>
+                    <div class="telegram-connect__actions">
+                        @if (_link.PrivateUrl is not null)
+                        {
+                            <Button Icon="user" Href="@_link.PrivateUrl" target="_blank" rel="noopener">Abrir chat con @@@Telegram.BotUsername</Button>
+                            <Button Variant="ButtonVariant.Secondary" Icon="users" Href="@_link.GroupUrl" target="_blank" rel="noopener">Agregar a un grupo</Button>
+                        }
+                    </div>
+                    <p class="muted">¿No se abre? Envía al bot este mensaje: <code class="telegram-connect__code">/start @_link.Code</code></p>
+                    <p class="muted"><Icon Name="clock" Size="14" /> El código caduca a las @Display.DateTime(_link.ExpiresAt). Esta página se actualiza sola al vincular.</p>
+                    <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" OnClick="() => _link = null">Cancelar</Button>
+                </div>
+            }
+        </div>
+    }
+
+    @if (_chats is null)
+    {
+        <div class="skeleton skeleton--table"></div>
+    }
+    else if (_chats.Count == 0)
+    {
+        <EmptyState Icon="send" Title="Sin chats vinculados"
+                    Text="@(AllowConnect ? null : "Cada usuario vincula su chat desde Mi cuenta → Telegram.")" />
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Chat</th>
+                        <th>Fallos</th>
+                        <th>Éxitos</th>
+                        <th aria-label="Acciones"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var chat in _chats)
+                    {
+                        <tr @key="chat.Id">
+                            <td>
+                                <div class="user-cell">
+                                    <span class="user-card__avatar"><Icon Name="@(chat.IsGroup ? "users" : "user")" Size="16" /></span>
+                                    <div>
+                                        <p class="strong">@(string.IsNullOrWhiteSpace(chat.ChatTitle) ? chat.ChatId.ToString(System.Globalization.CultureInfo.InvariantCulture) : chat.ChatTitle)</p>
+                                        <p class="muted">@(chat.IsGroup ? "Grupo" : "Chat privado") · desde @Display.DateTime(chat.CreatedAt)</p>
+                                    </div>
+                                </div>
+                            </td>
+                            <td><Toggle Value="chat.NotifyOnFailure" ValueChanged="v => SetPreferences(chat, v, chat.NotifyOnSuccess)" /></td>
+                            <td><Toggle Value="chat.NotifyOnSuccess" ValueChanged="v => SetPreferences(chat, chat.NotifyOnFailure, v)" /></td>
+                            <td class="table__actions">
+                                <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="zap" IconOnly Title="Enviar mensaje de prueba"
+                                        AriaLabel="Enviar mensaje de prueba" OnClick="() => Test(chat)" />
+                                <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="trash" IconOnly Title="Desvincular" AriaLabel="Desvincular"
+                                        Class="btn--danger-ghost" OnClick="() => Remove(chat)" />
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    private IReadOnlyList<TelegramSubscription>? _chats;
+    private TelegramLink? _link;
+
+    /// <summary>Muestra el botón para vincular un chat nuevo (Mi cuenta).</summary>
+    [Parameter] public bool AllowConnect { get; set; }
+
+    /// <summary>Lista los chats de todo el tenant (requiere administrar) en lugar de solo los del usuario.</summary>
+    [Parameter] public bool TenantWide { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        BotCommands.SubscriptionsChanged += HandleChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (Telegram.IsAvailable)
+        {
+            _chats = TenantWide ? await Telegram.ListTenantAsync() : await Telegram.ListMineAsync();
+        }
+    }
+
+    private void HandleChanged(Guid tenantId)
+    {
+        if (!Me.Owns(tenantId))
+        {
+            return;
+        }
+
+        _ = InvokeAsync(async () =>
+        {
+            var before = _chats?.Count ?? 0;
+            await LoadAsync();
+            if (_link is not null && (_chats?.Count ?? 0) > before)
+            {
+                _link = null;
+                Toasts.Success("Telegram vinculado", "Recibirás las alertas en ese chat.");
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private void CreateLink() => _link = Telegram.CreateLink();
+
+    private async Task SetPreferences(TelegramSubscription chat, bool onFailure, bool onSuccess)
+    {
+        await Telegram.UpdatePreferencesAsync(chat.Id, onFailure, onSuccess);
+        await LoadAsync();
+    }
+
+    private async Task Test(TelegramSubscription chat)
+    {
+        var result = await Telegram.SendTestAsync(chat.Id);
+        if (result.Success)
+        {
+            Toasts.Success("Mensaje enviado", result.Message);
+        }
+        else
+        {
+            Toasts.Error("No se pudo enviar", result.Message);
+            await LoadAsync();
+        }
+    }
+
+    private async Task Remove(TelegramSubscription chat)
+    {
+        await Telegram.DeleteAsync(chat.Id);
+        Toasts.Success("Chat desvinculado", chat.ChatTitle);
+        await LoadAsync();
+    }
+
+    public void Dispose() => BotCommands.SubscriptionsChanged -= HandleChanged;
+}

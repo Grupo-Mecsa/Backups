@@ -1,0 +1,113 @@
+<div class="options">
+    <section class="options__section">
+        <header class="options__header">
+            <Icon Name="zap" /> <h3>Compresión</h3>
+        </header>
+        <div class="segmented" role="radiogroup">
+            @foreach (var (kind, label, hint) in CompressionOptions)
+            {
+                <button type="button" role="radio" aria-checked="@(Job.Compression == kind)"
+                        class="segmented__item @(Job.Compression == kind ? "is-active" : null)"
+                        @onclick="() => SetCompression(kind)">
+                    <span class="segmented__label">@label</span>
+                    <span class="segmented__hint">@hint</span>
+                </button>
+            }
+        </div>
+    </section>
+
+    <section class="options__section">
+        <header class="options__header">
+            <Icon Name="lock" /> <h3>Cifrado AES-256</h3>
+            <Toggle Value="EncryptEnabled" ValueChanged="SetEncrypt" />
+        </header>
+        @if (EncryptEnabled)
+        {
+            <div class="animate-in">
+                <FormField Label="Contraseña de cifrado" For="passphrase" Error="@ErrorFor(nameof(BackupJob.EncryptionPassphrase))"
+                           Hint="@(HasStoredPassphrase ? "guardada" : null)"
+                           Help="Guárdala en un lugar seguro: sin ella el respaldo no se puede restaurar.">
+                    <TextInput Id="passphrase" Type="password" Value="@Passphrase"
+                               Placeholder="@(HasStoredPassphrase ? "•••••••• (sin cambios)" : "Mínimo 8 caracteres")"
+                               Invalid="ErrorFor(nameof(BackupJob.EncryptionPassphrase)) is not null"
+                               ValueChanged="SetPassphrase" />
+                </FormField>
+            </div>
+        }
+        else
+        {
+            <p class="muted">Los archivos se guardan sin cifrar en el destino.</p>
+        }
+    </section>
+
+    <section class="options__section">
+        <header class="options__header">
+            <Icon Name="shield" /> <h3>Retención</h3>
+        </header>
+        <div class="form-grid">
+            <FormField Label="Conservar los últimos" For="keepLast" Help="Cantidad de respaldos. 0 = sin límite por cantidad."
+                       Error="@ErrorFor(nameof(BackupJob.Retention))">
+                <TextInput Id="keepLast" Type="number" Min="0" Value="@Job.Retention.KeepLast.ToString()" ValueChanged="v => SetRetention(v, true)" />
+            </FormField>
+            <FormField Label="Conservar los de los últimos (días)" For="keepDays" Help="0 = sin límite por antigüedad.">
+                <TextInput Id="keepDays" Type="number" Min="0" Value="@Job.Retention.KeepDays.ToString()" ValueChanged="v => SetRetention(v, false)" />
+            </FormField>
+        </div>
+        <p class="muted">@RetentionSummary</p>
+    </section>
+</div>
+
+@code {
+    private static readonly (CompressionKind Kind, string Label, string Hint)[] CompressionOptions =
+    [
+        (CompressionKind.None, "Ninguna", "Más rápido"),
+        (CompressionKind.GZip, "GZip", ".gz · equilibrado"),
+        (CompressionKind.Brotli, "Brotli", ".br · mejor ratio"),
+    ];
+
+    [Parameter, EditorRequired] public BackupJob Job { get; set; } = default!;
+    [Parameter] public bool EncryptEnabled { get; set; }
+    [Parameter] public EventCallback<bool> EncryptEnabledChanged { get; set; }
+    [Parameter] public string? Passphrase { get; set; }
+    [Parameter] public EventCallback<string?> PassphraseChanged { get; set; }
+    [Parameter] public bool HasStoredPassphrase { get; set; }
+    [Parameter] public IReadOnlyList<ValidationError> Errors { get; set; } = [];
+
+    private string RetentionSummary => Job.Retention switch
+    {
+        { IsUnlimited: true } => "Se conservarán todos los respaldos.",
+        { KeepLast: > 0, KeepDays: > 0 } r => $"Se conservan los {r.KeepLast} más recientes y cualquiera de los últimos {r.KeepDays} días.",
+        { KeepLast: > 0 } r => $"Se conservan los {r.KeepLast} más recientes; los anteriores se eliminan.",
+        var r => $"Se eliminan los respaldos con más de {r.KeepDays} días.",
+    };
+
+    private string? ErrorFor(string field) =>
+        Errors.FirstOrDefault(e => e.Field == field)?.Message;
+
+    private void SetCompression(CompressionKind kind) => Job.Compression = kind;
+
+    private Task SetEncrypt(bool value)
+    {
+        EncryptEnabled = value;
+        return EncryptEnabledChanged.InvokeAsync(value);
+    }
+
+    private Task SetPassphrase(string? value)
+    {
+        Passphrase = value;
+        return PassphraseChanged.InvokeAsync(value);
+    }
+
+    private void SetRetention(string? value, bool keepLast)
+    {
+        var parsed = int.TryParse(value, out var number) ? Math.Max(0, number) : 0;
+        if (keepLast)
+        {
+            Job.Retention.KeepLast = parsed;
+        }
+        else
+        {
+            Job.Retention.KeepDays = parsed;
+        }
+    }
+}

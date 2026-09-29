@@ -1,0 +1,21 @@
+<label class="toggle @(Disabled ? "is-disabled" : null)">
+    <input type="checkbox" class="toggle__input" checked="@Value" disabled="@Disabled" @onchange="HandleChange" />
+    <span class="toggle__track" aria-hidden="true"><span class="toggle__thumb"></span></span>
+    @if (Label is not null)
+    {
+        <span class="toggle__label">@Label</span>
+    }
+</label>
+
+@code {
+    [Parameter] public bool Value { get; set; }
+    [Parameter] public EventCallback<bool> ValueChanged { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+
+    private Task HandleChange(ChangeEventArgs e)
+    {
+        Value = e.Value is true || string.Equals(e.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        return ValueChanged.InvokeAsync(Value);
+    }
+}
