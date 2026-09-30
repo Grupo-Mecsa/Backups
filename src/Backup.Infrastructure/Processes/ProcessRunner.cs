@@ -8,6 +8,7 @@ namespace Backup.Infrastructure.Processes;
 public sealed class ProcessRunner : IProcessRunner
 {
     private const int MaxErrorChars = 4000;
+    private const int TailLines = 5;
 
     public async Task RunAsync(
         string fileName,
@@ -47,7 +48,11 @@ public sealed class ProcessRunner : IProcessRunner
             throw new ProcessFailedException($"No se pudo ejecutar '{fileName}'. ¿Está instalado y en el PATH? ({ex.Message})");
         }
 
+        // Se guarda el principio del error y, aparte, sus últimas líneas: muchas herramientas resumen al final
+        // (p. ej. pg_restore: "errors ignored on restore: 12") y ese resumen no debe perderse al recortar.
         var stderr = new StringBuilder();
+        var tail = new Queue<string>();
+        var truncated = false;
         var stderrTask = Task.Run(async () =>
         {
             while (await process.StandardError.ReadLineAsync(cancellationToken) is { } line)
@@ -55,6 +60,14 @@ public sealed class ProcessRunner : IProcessRunner
                 if (stderr.Length < MaxErrorChars)
                 {
                     stderr.AppendLine(line);
+                    continue;
+                }
+
+                truncated = true;
+                tail.Enqueue(line);
+                if (tail.Count > TailLines)
+                {
+                    tail.Dequeue();
                 }
             }
         }, cancellationToken);
@@ -82,6 +95,11 @@ public sealed class ProcessRunner : IProcessRunner
         if (process.ExitCode != 0)
         {
             var detail = stderr.ToString().Trim();
+            if (truncated)
+            {
+                detail += "\n[...]\n" + string.Join('\n', tail);
+            }
+
             throw new ProcessFailedException(
                 $"'{Path.GetFileName(fileName)}' terminó con código {process.ExitCode}." + (detail.Length > 0 ? $" {detail}" : string.Empty));
         }

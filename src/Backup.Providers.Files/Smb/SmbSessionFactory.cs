@@ -18,11 +18,11 @@ internal sealed class SmbSessionFactory : IFileSessionFactory
         ProviderCategory.FileTransfer,
         "share",
         [
-            SettingField.Text("host", "Servidor", required: true, placeholder: "nas01 o 192.168.1.10"),
-            SettingField.Text("share", "Recurso compartido", required: true, placeholder: "Backups"),
-            SettingField.Text("domain", "Dominio", placeholder: "EMPRESA"),
-            SettingField.Text("user", "Usuario", required: true),
-            SettingField.Secret("password", "Contraseña"),
+            SettingField.Text("host", "Servidor", required: true, placeholder: "nas01 o 192.168.1.10").ForConnection(),
+            SettingField.Text("share", "Recurso compartido", required: true, placeholder: "Backups").ForConnection(),
+            SettingField.Text("domain", "Dominio", placeholder: "EMPRESA").ForConnection(),
+            SettingField.Text("user", "Usuario", required: true).ForConnection(),
+            SettingField.Secret("password", "Contraseña").ForConnection(),
             SettingField.Text("remotePath", "Carpeta dentro del recurso", placeholder: "sql/produccion").Browsable(),
             .. role == ProviderRole.Source ? FileSessionSource.FilterFields("remotePath") : [],
         ]);

@@ -1,0 +1,147 @@
+@page "/restores/{Id:guid}"
+@attribute [Authorize(Policy = AppPolicies.CanManage)]
+@implements IDisposable
+@inject RestoreService Restores
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+<PageTemplate Title="Restauración" Subtitle="@(_restore is null ? null : $"{_restore.JobName} · {Display.DateTime(_restore.StartedAt)}")"
+              BackHref="/restores" BackLabel="Restauraciones">
+    <Actions>
+        @if (_restore?.Status == RunStatus.Running)
+        {
+            <Button Variant="ButtonVariant.Secondary" Icon="stop" OnClick="CancelAsync">Cancelar</Button>
+        }
+    </Actions>
+    <ChildContent>
+        @if (_restore is null)
+        {
+            @if (_notFound)
+            {
+                <EmptyState Icon="alert" Title="Restauración no encontrada" />
+            }
+            else
+            {
+                <div class="skeleton skeleton--card"></div>
+            }
+        }
+        else
+        {
+            @if (_restore.Status == RunStatus.Running)
+            {
+                <div class="progress" aria-label="En curso"><span></span></div>
+            }
+
+            <div class="stats">
+                <Card Index="0" Class="kv">
+                    <p class="kv__label">Estado</p>
+                    <RunStatusBadge Status="_restore.Status" />
+                </Card>
+                <Card Index="1" Class="kv">
+                    <p class="kv__label">Duración</p>
+                    <p class="kv__value">@(_restore.Status == RunStatus.Running ? Display.Relative(_restore.StartedAt).Replace("hace ", "") : Display.Duration(_restore.Duration))</p>
+                </Card>
+                <Card Index="2" Class="kv">
+                    <p class="kv__label">Pedida por</p>
+                    <p class="kv__value">@(_restore.RequestedBy ?? "—")</p>
+                </Card>
+            </div>
+
+            @if (_restore.Error is not null)
+            {
+                <div class="callout callout--@(_restore.Status == RunStatus.Warning ? "warning" : "danger") animate-in"><Icon Name="alert" Size="16" /> <span>@_restore.Error</span></div>
+            }
+
+            <Card Index="3">
+                <dl class="summary">
+                    <div><dt>Respaldo</dt><dd class="mono break"><a href="@($"/runs/{_restore.RunId}")">@_restore.ArtifactName</a></dd></div>
+                    <div><dt>Destino</dt><dd class="break">@_restore.TargetSummary</dd></div>
+                    <div><dt>Inicio</dt><dd>@Display.DateTime(_restore.StartedAt)</dd></div>
+                    <div><dt>Finalizó</dt><dd>@Display.DateTime(_restore.FinishedAt)</dd></div>
+                </dl>
+            </Card>
+
+            <Card Index="4" Class="log-card">
+                <header class="card__header">
+                    <h2 class="card__title">Bitácora</h2>
+                    <div class="card__actions">
+                        @if (_restore.Status == RunStatus.Running)
+                        {
+                            <Badge Tone="Tone.Info" Dot Pulse>En vivo</Badge>
+                        }
+                        <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="copy" OnClick="CopyLogAsync">Copiar</Button>
+                    </div>
+                </header>
+                <pre class="log">@foreach (var line in _restore.Log.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+{<span class="log__line @LineClass(line)">@line</span>
+}</pre>
+            </Card>
+        }
+    </ChildContent>
+</PageTemplate>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private RestoreOperation? _restore;
+    private bool _notFound;
+    private readonly CancellationTokenSource _disposed = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _restore = await Restores.GetAsync(Id);
+        _notFound = _restore is null;
+        if (_restore?.Status == RunStatus.Running)
+        {
+            _ = PollAsync();
+        }
+    }
+
+    /// <summary>La restauración corre en segundo plano y guarda su bitácora cada pocos segundos: se consulta mientras siga en curso.</summary>
+    private async Task PollAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_disposed.Token))
+            {
+                _restore = await Restores.GetAsync(Id, _disposed.Token);
+                await InvokeAsync(StateHasChanged);
+                if (_restore?.Status != RunStatus.Running)
+                {
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private static string? LineClass(string line) =>
+        line.Contains(" ERR ", StringComparison.Ordinal) ? "log__line--error"
+        : line.Contains(" WRN ", StringComparison.Ordinal) ? "log__line--warn"
+        : null;
+
+    private async Task CancelAsync()
+    {
+        if (await Restores.CancelAsync(Id))
+        {
+            Toasts.Info("Cancelando restauración...");
+        }
+    }
+
+    private async Task CopyLogAsync()
+    {
+        if (_restore is not null && await JS.InvokeAsync<bool>("backupClipboard.copy", _restore.Log))
+        {
+            Toasts.Success("Bitácora copiada");
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed.Cancel();
+        _disposed.Dispose();
+    }
+}

@@ -15,6 +15,13 @@ public interface IFolderBrowser
     Task<FolderListing> BrowseAsync(ProviderSettings settings, string? path, CancellationToken cancellationToken);
 }
 
+/// <summary>Explorador que además permite crear carpetas (p. ej. para elegir un destino que aún no existe).</summary>
+public interface IFolderCreator
+{
+    /// <returns>Ruta de la carpeta creada, en el formato del proveedor.</returns>
+    Task<string> CreateFolderAsync(ProviderSettings settings, string parentPath, string name, CancellationToken cancellationToken);
+}
+
 /// <param name="Path">Ruta listada, tal como se guardaría en el campo.</param>
 /// <param name="Parent">Ruta de la carpeta superior; null en la raíz.</param>
 public sealed record FolderListing(string Path, string? Parent, IReadOnlyList<FolderItem> Items)

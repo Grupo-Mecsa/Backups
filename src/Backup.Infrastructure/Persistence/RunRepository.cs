@@ -86,4 +86,10 @@ public sealed class RunRepository(IDbContextFactory<BackupDbContext> contextFact
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
         return await db.Runs.Where(r => r.StartedAt < before && r.Status != RunStatus.Running).ExecuteDeleteAsync(cancellationToken);
     }
+
+    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return await db.Runs.Where(r => r.Id == id && r.Status != RunStatus.Running).ExecuteDeleteAsync(cancellationToken) > 0;
+    }
 }

@@ -18,7 +18,12 @@ public static class DependencyInjection
         services.AddSingleton<IJobValidator, JobValidator>();
         services.AddSingleton<IBackupRunner, BackupRunner>();
         services.AddScoped<JobService>();
+        services.AddSingleton<Connections.ConnectionResolver>();
+        services.AddScoped<Connections.ConnectionService>();
         services.AddScoped<DashboardService>();
+        services.AddScoped<ArtifactService>();
+        services.AddSingleton<RestoreRunner>();
+        services.AddScoped<RestoreService>();
         services.AddSingleton<Notifications.SmtpResolver>();
         services.AddScoped<Notifications.NotificationService>();
         services.AddScoped<Tenants.TenantService>();

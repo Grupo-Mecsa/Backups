@@ -30,9 +30,28 @@
                         </button>
                     }
                 </nav>
+                @if (CanCreateFolder)
+                {
+                    <Button Variant="ButtonVariant.Secondary" Size="ButtonSize.Small" Icon="plus" Title="Nueva carpeta"
+                            Disabled="_creating is not null" OnClick="StartCreate">Nueva carpeta</Button>
+                }
                 <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="refresh" IconOnly Title="Actualizar" AriaLabel="Actualizar"
                         OnClick="() => LoadAsync(_listing?.Path)" />
             </div>
+
+            @if (_creating is not null)
+            {
+                <div class="explorer__create animate-in">
+                    <Icon Name="folder" Size="16" />
+                    <TextInput Placeholder="Nombre de la carpeta" Immediate @bind-Value="_creating" Invalid="_createError is not null" />
+                    <Button Size="ButtonSize.Small" Icon="check" Busy="_createBusy" Disabled="string.IsNullOrWhiteSpace(_creating)" OnClick="CreateAsync">Crear</Button>
+                    <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" OnClick="CancelCreate">Cancelar</Button>
+                </div>
+                @if (_createError is not null)
+                {
+                    <p class="explorer__create-error"><Icon Name="alert" Size="13" /> @_createError</p>
+                }
+            }
 
             <div class="explorer__search">
                 <TextInput Icon="search" Placeholder="Buscar en esta carpeta..." Immediate @bind-Value="_filter" />
@@ -156,6 +175,55 @@
     [Parameter, EditorRequired] public Func<string?, Task<BrowseResult>> Loader { get; set; } = default!;
     [Parameter] public EventCallback<string> OnPicked { get; set; }
     [Parameter] public EventCallback<string> OnSelectionApplied { get; set; }
+
+    /// <summary>Crea una carpeta (padre, nombre). Si es null, no se ofrece «Nueva carpeta».</summary>
+    [Parameter] public Func<string, string, Task<CreateFolderResult>>? FolderCreator { get; set; }
+
+    private string? _creating;
+    private string? _createError;
+    private bool _createBusy;
+
+    /// <summary>Solo al elegir una carpeta (no al marcar qué respaldar) y dentro de una carpeta real.</summary>
+    private bool CanCreateFolder => FolderCreator is not null && Mode != ExplorerMode.SelectItems
+        && _listing is { Path.Length: > 0 } && !_loading && _error is null;
+
+    private void StartCreate()
+    {
+        _creating = string.Empty;
+        _createError = null;
+    }
+
+    private void CancelCreate()
+    {
+        _creating = null;
+        _createError = null;
+    }
+
+    private async Task CreateAsync()
+    {
+        if (FolderCreator is null || _listing is null || string.IsNullOrWhiteSpace(_creating))
+        {
+            return;
+        }
+
+        _createBusy = true;
+        try
+        {
+            var result = await FolderCreator(_listing.Path, _creating);
+            if (result.Path is null)
+            {
+                _createError = result.Error ?? "No se pudo crear la carpeta.";
+                return;
+            }
+
+            CancelCreate();
+            await LoadAsync(result.Path); // entrar en la carpeta nueva: «Elegir esta carpeta» la toma
+        }
+        finally
+        {
+            _createBusy = false;
+        }
+    }
 
     private bool _wasVisible;
     private bool _loading;

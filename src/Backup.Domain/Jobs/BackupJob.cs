@@ -15,6 +15,9 @@ public sealed class BackupJob
     public ProviderBinding Source { get; set; } = new();
     public ProviderBinding Destination { get; set; } = new();
 
+    /// <summary>A dónde se restaura por defecto su respaldo (servidor y base, o carpeta). Null = se elige al restaurar.</summary>
+    public ProviderBinding? RestoreTarget { get; set; }
+
     /// <summary>Expresión cron de 5 campos (min hora día mes díaSemana). Null = solo manual.</summary>
     public string? Schedule { get; set; }
     public string TimeZone { get; set; } = "UTC";

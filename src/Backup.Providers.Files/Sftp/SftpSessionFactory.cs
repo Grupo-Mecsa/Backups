@@ -14,19 +14,19 @@ internal sealed class SftpSessionFactory : IFileSessionFactory
         ProviderCategory.FileTransfer,
         "server",
         [
-            SettingField.Text("host", "Host", required: true),
-            SettingField.Number("port", "Puerto", 22),
-            SettingField.Text("user", "Usuario", required: true),
-            SettingField.Secret("password", "Contraseña", help: "Vacío si usas llave privada."),
-            SettingField.Text("privateKeyPath", "Ruta de la llave privada", placeholder: "/keys/id_ed25519", help: "Archivo montado en el contenedor."),
-            SettingField.Secret("privateKeyPassphrase", "Passphrase de la llave"),
+            SettingField.Text("host", "Host", required: true).ForConnection(),
+            SettingField.Number("port", "Puerto", 22).ForConnection(),
+            SettingField.Text("user", "Usuario", required: true).ForConnection(),
+            SettingField.Secret("password", "Contraseña", help: "Vacío si usas llave privada.").ForConnection(),
+            SettingField.Text("privateKeyPath", "Ruta de la llave privada", placeholder: "/keys/id_ed25519", help: "Archivo montado en el contenedor.").ForConnection(),
+            SettingField.Secret("privateKeyPassphrase", "Passphrase de la llave").ForConnection(),
             SettingField.Text("remotePath", "Carpeta remota", placeholder: "/home/backup").Browsable(),
             SettingField.Text("hostKeyFingerprint", "Huella SHA256 del host (opcional)", placeholder: "AbCdEf...",
-                help: "Si se indica, la conexión se rechaza si el servidor no coincide."),
+                help: "Si se indica, la conexión se rechaza si el servidor no coincide.").ForConnection(),
             .. role == ProviderRole.Source ? FileSessionSource.FilterFields("remotePath") : [],
         ]);
 
-    public string RootPath(ProviderSettings settings) => (settings.Get("remotePath") ?? string.Empty).TrimEnd('/');
+    public string RootPath(ProviderSettings settings) => RemotePaths.Root(settings.Get("remotePath"));
 
     public Task<FolderListing> BrowseAsync(ProviderSettings settings, string? path, CancellationToken cancellationToken) =>
         FileSessionBrowsing.BrowseAsync(this, settings, path, cancellationToken);
@@ -102,7 +102,7 @@ internal sealed class SftpSessionFactory : IFileSessionFactory
             return [.. client.ListDirectory(path)
                 .Where(f => f.Name is not "." and not ".." && (f.IsDirectory || f.IsRegularFile))
                 .Select(f => new RemoteEntry(
-                    ProviderHelpers.CombineRemote(remoteDirectory, f.Name),
+                    RemotePaths.Combine(remoteDirectory, f.Name),
                     f.Name,
                     f.IsDirectory,
                     new DateTimeOffset(DateTime.SpecifyKind(f.LastWriteTimeUtc, DateTimeKind.Utc)),

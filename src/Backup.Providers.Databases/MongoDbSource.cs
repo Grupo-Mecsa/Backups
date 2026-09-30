@@ -17,11 +17,11 @@ public sealed class MongoDbSource(IProcessRunner processes) : IBackupSource
             {
                 Required = true,
                 Help = "mongodb://usuario:clave@host:27017/?authSource=admin o mongodb+srv://...",
-            },
+            }.ForConnection(),
             SettingField.Text("database", "Base de datos", help: "Vacío = todas."),
             SettingField.Toggle("oplog", "Incluir oplog (--oplog)", false, "Solo para replica sets y respaldo de todas las bases."),
             SettingField.Text("extraArgs", "Argumentos adicionales"),
-            SettingField.Text("toolPath", "Ruta de mongodump", defaultValue: "mongodump"),
+            SettingField.Text("toolPath", "Ruta de mongodump", defaultValue: "mongodump").ForConnection(),
         ]);
 
     public async Task<BackupArtifact> CreateArtifactAsync(SourceContext context, CancellationToken cancellationToken)

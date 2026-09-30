@@ -17,6 +17,9 @@ public interface IConnectionTester
 public interface IBackupSource : IProvider
 {
     Task<BackupArtifact> CreateArtifactAsync(SourceContext context, CancellationToken cancellationToken);
+
+    /// <summary>Extensión del artefacto que producirá con esta configuración (".zip", ".dump"...). Null = no se sabe de antemano.</summary>
+    string? ArtifactExtension(ProviderSettings settings) => null;
 }
 
 /// <summary>Destino de almacenamiento para los respaldos.</summary>

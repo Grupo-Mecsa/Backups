@@ -4,6 +4,7 @@
 @inject DashboardService Dashboard
 @inject IProviderRegistry Registry
 @inject ToastService Toasts
+@inject NavigationManager Navigation
 
 <PageTemplate Title="Trabajos" Subtitle="Define qué respaldar, a dónde y cuándo">
     <Actions>
@@ -55,6 +56,7 @@
                              OnRun="() => Run(job)"
                              OnCancel="() => Cancel(job)"
                              OnDelete="() => AskDelete(job)"
+                             OnDuplicate="() => Duplicate(job)"
                              OnToggle="enabled => Toggle(job, enabled)" />
                 }
             </div>
@@ -114,6 +116,13 @@
         await JobService.SetEnabledAsync(job.Id, enabled);
         job.Enabled = enabled;
         Toasts.Success(enabled ? "Trabajo activado" : "Trabajo pausado", job.Name);
+    }
+
+    private async Task Duplicate(BackupJob job)
+    {
+        var id = await JobService.DuplicateAsync(job.Id);
+        Toasts.Success("Trabajo duplicado", "La copia quedó pausada: revísala y actívala cuando esté lista.");
+        Navigation.NavigateTo($"/jobs/{id}");
     }
 
     private void AskDelete(BackupJob job)

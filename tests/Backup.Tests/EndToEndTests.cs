@@ -510,6 +510,189 @@ public sealed class EndToEndTests : IAsyncLifetime
         Assert.Contains(await admin.ListAsync(), u => u.Email == "beto@acme.com" && !u.IsPending);
     }
 
+    [Fact]
+    public async Task Artifact_CanBeReviewed_DownloadedAndVerified()
+    {
+        var jobs = _services.GetRequiredService<JobService>();
+        var save = await jobs.SaveAsync(new BackupJob
+        {
+            Name = "Revisable",
+            Source = Binding("local", ("path", SourceDir), ("exclude", "*.tmp")),
+            Destination = Binding("local", ("path", DestinationDir)),
+            Compression = CompressionKind.GZip,
+            EncryptionPassphrase = "contraseña-segura",
+        });
+        Assert.True(save.Success);
+        var run = await _services.GetRequiredService<IBackupRunner>().RunAsync(save.JobId, RunTrigger.Manual, CancellationToken.None);
+        Assert.True(run.Status == RunStatus.Succeeded, run.Error);
+
+        var artifacts = _services.GetRequiredService<ArtifactService>();
+        Assert.True(artifacts.IsTransformed(run));
+        Assert.EndsWith(".zip", artifacts.DecodedName(run), StringComparison.Ordinal);
+
+        // Contenido del .zip, descifrado y descomprimido.
+        var contents = await artifacts.GetContentsAsync(run.Id);
+        Assert.Equal(ArtifactContentKind.Archive, contents.Kind);
+        Assert.Equal(new[] { "factura.txt", "sub/reporte.csv" }, contents.Entries.Select(e => e.Path).ToArray());
+
+        // Un archivo suelto.
+        var entry = await artifacts.ExtractEntryAsync(run.Id, _user.TenantId, "factura.txt");
+        Assert.Equal("Factura 001", await File.ReadAllTextAsync(entry.FilePath));
+
+        // Tal cual (cifrado) y listo para usar (.zip).
+        var raw = await artifacts.PrepareAsync(run.Id, _user.TenantId, decoded: false);
+        Assert.EndsWith(".zip.gz.enc", raw.DownloadName, StringComparison.Ordinal);
+        var decoded = await artifacts.PrepareAsync(run.Id, _user.TenantId, decoded: true);
+        using (var zip = ZipFile.OpenRead(decoded.FilePath))
+        {
+            Assert.Equal(2, zip.Entries.Count(e => !e.FullName.EndsWith('/')));
+        }
+
+        // Otro tenant no la ve.
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => artifacts.PrepareAsync(run.Id, Guid.NewGuid(), decoded: false));
+    }
+
+    [Fact]
+    public async Task Artifact_AlteredInDestination_IsRejectedBySha256()
+    {
+        var jobs = _services.GetRequiredService<JobService>();
+        var save = await jobs.SaveAsync(new BackupJob
+        {
+            Name = "Alterable",
+            Source = Binding("local", ("path", SourceDir)),
+            Destination = Binding("local", ("path", DestinationDir)),
+            Compression = CompressionKind.None,
+        });
+        Assert.True(save.Success);
+        var run = await _services.GetRequiredService<IBackupRunner>().RunAsync(save.JobId, RunTrigger.Manual, CancellationToken.None);
+        Assert.True(run.Status == RunStatus.Succeeded, run.Error);
+
+        await File.AppendAllTextAsync(Path.Combine(DestinationDir, run.ArtifactName!), "alterado");
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _services.GetRequiredService<ArtifactService>().PrepareAsync(run.Id, _user.TenantId, decoded: false));
+        Assert.Contains("SHA-256", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Restore_ZipBackup_ToLocalFolder_KeepsExistingFilesUnlessOverwrite()
+    {
+        var jobs = _services.GetRequiredService<JobService>();
+        var save = await jobs.SaveAsync(new BackupJob
+        {
+            Name = "Restaurable",
+            Source = Binding("local", ("path", SourceDir), ("exclude", "*.tmp")),
+            Destination = Binding("local", ("path", DestinationDir)),
+            Compression = CompressionKind.GZip,
+            EncryptionPassphrase = "contraseña-segura",
+        });
+        Assert.True(save.Success);
+        var run = await _services.GetRequiredService<IBackupRunner>().RunAsync(save.JobId, RunTrigger.Manual, CancellationToken.None);
+        Assert.True(run.Status == RunStatus.Succeeded, run.Error);
+
+        var restores = _services.GetRequiredService<RestoreService>();
+        Assert.Contains(restores.TargetsFor(run), t => t.Descriptor.Key == "local");
+
+        // Un archivo ya existente en el destino de la restauración: sin "sobrescribir" se conserva.
+        var target = Path.Combine(_root, "restaurado");
+        Directory.CreateDirectory(target);
+        await File.WriteAllTextAsync(Path.Combine(target, "factura.txt"), "versión local");
+
+        var first = await StartAndWaitAsync(restores, run.Id, Binding("local", ("path", target)));
+        Assert.True(first.Status == RunStatus.Succeeded, first.Error + "\n" + first.Log);
+        Assert.Equal("versión local", await File.ReadAllTextAsync(Path.Combine(target, "factura.txt")));
+        Assert.Equal("a,b,c\n1,2,3", await File.ReadAllTextAsync(Path.Combine(target, "sub", "reporte.csv")));
+        Assert.Contains("ya existían", first.Log, StringComparison.Ordinal);
+
+        var second = await StartAndWaitAsync(restores, run.Id, Binding("local", ("path", target), ("overwrite", "true")));
+        Assert.Equal(RunStatus.Succeeded, second.Status);
+        Assert.Equal("Factura 001", await File.ReadAllTextAsync(Path.Combine(target, "factura.txt")));
+
+        // Queda en el historial, con quién la pidió y sin secretos.
+        var history = await restores.ListAsync();
+        Assert.Equal(2, history.Count);
+        Assert.All(history, r => Assert.Equal("Restaurable", r.JobName));
+    }
+
+    [Fact]
+    public async Task Restore_RequiresTargetFields()
+    {
+        var save = await _services.GetRequiredService<JobService>().SaveAsync(new BackupJob
+        {
+            Name = "SinDestino",
+            Source = Binding("local", ("path", SourceDir)),
+            Destination = Binding("local", ("path", DestinationDir)),
+        });
+        var run = await _services.GetRequiredService<IBackupRunner>().RunAsync(save.JobId, RunTrigger.Manual, CancellationToken.None);
+
+        var result = await _services.GetRequiredService<RestoreService>().StartAsync(run.Id, Binding("local"), RestoreSecrets.None);
+        Assert.False(result.Success);
+        Assert.Contains(result.Errors, e => e.Field == "Target.path");
+    }
+
+    [Fact]
+    public async Task Restore_Presets_JobTargetAndSource()
+    {
+        var target = Path.Combine(_root, "copia-fija");
+        var save = await _services.GetRequiredService<JobService>().SaveAsync(new BackupJob
+        {
+            Name = "ConDestinoFijo",
+            Source = Binding("local", ("path", SourceDir), ("exclude", "*.tmp")),
+            Destination = Binding("local", ("path", DestinationDir)),
+            RestoreTarget = Binding("local", ("path", target)),
+        });
+        Assert.True(save.Success, string.Join("; ", save.Errors.Select(e => e.Message)));
+        var run = await _services.GetRequiredService<IBackupRunner>().RunAsync(save.JobId, RunTrigger.Manual, CancellationToken.None);
+
+        var restores = _services.GetRequiredService<RestoreService>();
+        var presets = await restores.PresetsAsync(run);
+        var jobTarget = presets.Single(p => p.Preset == RestorePreset.JobTarget);
+        var source = presets.Single(p => p.Preset == RestorePreset.Source);
+        Assert.Equal(target, jobTarget.Binding.Settings["path"]);
+        Assert.Equal(SourceDir, source.Binding.Settings["path"]);
+
+        // El destino del trabajo, tal cual viene: se levanta ahí.
+        var restore = await StartAndWaitAsync(restores, run.Id, jobTarget.Binding, new RestoreSecrets(save.JobId, RestorePreset.JobTarget));
+        Assert.True(restore.Status == RunStatus.Succeeded, restore.Error + "\n" + restore.Log);
+        Assert.Equal("Factura 001", await File.ReadAllTextAsync(Path.Combine(target, "factura.txt")));
+    }
+
+    [Fact]
+    public async Task RestoreTarget_ThatCannotRestoreTheSourceBackup_IsRejected()
+    {
+        var save = await _services.GetRequiredService<JobService>().SaveAsync(new BackupJob
+        {
+            Name = "DestinoIncompatible",
+            Source = Binding("local", ("path", SourceDir)),
+            Destination = Binding("local", ("path", DestinationDir)),
+            RestoreTarget = Binding("postgres", ("host", "db"), ("user", "postgres"), ("database", "x")),
+        });
+
+        Assert.False(save.Success);
+        Assert.Contains(save.Errors, e => e.Field == "Restore");
+    }
+
+    private Task<Domain.Runs.RestoreOperation> StartAndWaitAsync(RestoreService restores, Guid runId, ProviderBinding target) =>
+        StartAndWaitAsync(restores, runId, target, RestoreSecrets.None);
+
+    private async Task<Domain.Runs.RestoreOperation> StartAndWaitAsync(RestoreService restores, Guid runId, ProviderBinding target, RestoreSecrets secrets)
+    {
+        var start = await restores.StartAsync(runId, target, secrets);
+        Assert.True(start.Success, string.Join("; ", start.Errors.Select(e => e.Message)));
+        for (var i = 0; i < 100; i++)
+        {
+            var restore = await restores.GetAsync(start.RestoreId);
+            if (restore is { Status: not RunStatus.Running })
+            {
+                return restore;
+            }
+
+            await Task.Delay(200);
+        }
+
+        throw new TimeoutException("La restauración no terminó a tiempo.");
+    }
+
     private static ProviderBinding Binding(string key, params (string Key, string? Value)[] settings)
     {
         var binding = new ProviderBinding { ProviderKey = key };

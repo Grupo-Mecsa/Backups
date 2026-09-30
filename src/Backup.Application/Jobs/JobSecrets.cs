@@ -14,6 +14,9 @@ public sealed class JobSecrets(IProviderRegistry registry)
     public static string Key(ProviderRole role, string field) =>
         $"{(role == ProviderRole.Source ? "source" : "destination")}:{field}";
 
+    /// <summary>Clave de un secreto del destino de restauración predeterminado.</summary>
+    public static string RestoreKey(string field) => $"restore:{field}";
+
     /// <summary>Enumera los campos secretos de un trabajo como (clave, binding, campo).</summary>
     public IEnumerable<(string Key, ProviderBinding Binding, string Field)> Enumerate(BackupJob job)
     {
@@ -28,6 +31,14 @@ public sealed class JobSecrets(IProviderRegistry registry)
             foreach (var field in provider.Descriptor.SecretFields)
             {
                 yield return (Key(role, field.Key), binding, field.Key);
+            }
+        }
+
+        if (job.RestoreTarget is { } restore && registry.FindRestoreTarget(restore.ProviderKey) is { } target)
+        {
+            foreach (var field in target.RestoreFields.Where(f => f.IsSecret))
+            {
+                yield return (RestoreKey(field.Key), restore, field.Key);
             }
         }
     }
@@ -67,8 +78,11 @@ public sealed class JobSecrets(IProviderRegistry registry)
                 continue;
             }
 
-            var storedBinding = ReferenceEquals(binding, edited.Source) ? stored.Source : stored.Destination;
-            if (string.Equals(storedBinding.ProviderKey, binding.ProviderKey, StringComparison.OrdinalIgnoreCase)
+            var storedBinding = ReferenceEquals(binding, edited.Source) ? stored.Source
+                : ReferenceEquals(binding, edited.Destination) ? stored.Destination
+                : stored.RestoreTarget;
+            if (storedBinding is not null
+                && string.Equals(storedBinding.ProviderKey, binding.ProviderKey, StringComparison.OrdinalIgnoreCase)
                 && storedBinding.Settings.TryGetValue(field, out var storedValue))
             {
                 binding.Settings[field] = storedValue;
@@ -90,6 +104,7 @@ public sealed class JobSecrets(IProviderRegistry registry)
         Enabled = job.Enabled,
         Source = job.Source.Clone(),
         Destination = job.Destination.Clone(),
+        RestoreTarget = job.RestoreTarget?.Clone(),
         Schedule = job.Schedule,
         TimeZone = job.TimeZone,
         Compression = job.Compression,

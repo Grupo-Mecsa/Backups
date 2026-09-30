@@ -22,6 +22,7 @@ public sealed partial class BackupRunner(
     IRunRepository runs,
     IProviderRegistry registry,
     ArtifactPackager packager,
+    Connections.ConnectionResolver connections,
     IEnumerable<IRunNotifier> notifiers,
     IOptions<BackupOptions> options,
     TimeProvider timeProvider,
@@ -49,9 +50,31 @@ public sealed partial class BackupRunner(
         try
         {
             Directory.CreateDirectory(workDir);
-            await ExecuteAsync(job, run, log, workDir, cancellationToken);
-            run.Status = RunStatus.Succeeded;
-            log.Info("Respaldo completado correctamente.");
+            using (var live = new CancellationTokenSource())
+            {
+                var publishing = PublishLiveAsync(run, log, live.Token);
+                try
+                {
+                    await ExecuteAsync(job, run, log, workDir, cancellationToken);
+                }
+                finally
+                {
+                    await live.CancelAsync();
+                    await publishing;
+                }
+            }
+
+            if (log.Omitted > 0)
+            {
+                run.Status = RunStatus.Warning;
+                run.Error = $"{log.Omitted} elemento(s) omitido(s); revisa la bitácora.";
+                log.Warn($"Respaldo completado con advertencias: {run.Error}");
+            }
+            else
+            {
+                run.Status = RunStatus.Succeeded;
+                log.Info("Respaldo completado correctamente.");
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -64,7 +87,7 @@ public sealed partial class BackupRunner(
         {
             run.Status = RunStatus.Failed;
             run.Error = ex.Message;
-            log.Error(ex.Message);
+            log.Error(ex);
             LogRunFailed(ex, job.Name);
         }
         finally
@@ -81,6 +104,7 @@ public sealed partial class BackupRunner(
 
     private async Task ExecuteAsync(BackupJob job, BackupRun run, RunLog log, string workDir, CancellationToken cancellationToken)
     {
+        job = await connections.ResolveAsync(job, cancellationToken);
         var source = registry.GetSource(job.Source.ProviderKey);
         var destination = registry.GetDestination(job.Destination.ProviderKey);
         log.Info($"Origen: {source.Descriptor.DisplayName} → Destino: {destination.Descriptor.DisplayName}");
@@ -153,9 +177,47 @@ public sealed partial class BackupRunner(
 
     private async Task CheckpointAsync(BackupRun run, RunLog log)
     {
-        run.Log = log.ToString();
-        await runs.UpdateAsync(run, CancellationToken.None);
-        await NotifyAsync(run);
+        await log.PublishGate.WaitAsync();
+        try
+        {
+            run.Log = log.ToString();
+            await runs.UpdateAsync(run, CancellationToken.None);
+            await NotifyAsync(run);
+        }
+        finally
+        {
+            log.PublishGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Publica la bitácora cada pocos segundos mientras la ejecución avanza: una fase larga (p. ej. descargar miles
+    /// de archivos) no pasa por ningún punto de control y, sin esto, la vista en vivo quedaría quieta.
+    /// </summary>
+    private async Task PublishLiveAsync(BackupRun run, RunLog log, CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3), timeProvider);
+        var published = log.Version;
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                if (log.Version != published)
+                {
+                    published = log.Version;
+                    await CheckpointAsync(run, log);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+#pragma warning disable CA1031 // Publicar en vivo es un extra: un fallo al guardar no debe tumbar el respaldo
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            LogLivePublishFailed(ex, run.JobName);
+        }
     }
 
     private async Task NotifyAsync(BackupRun run)
@@ -199,6 +261,9 @@ public sealed partial class BackupRunner(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "El notificador {Notifier} falló")]
     private partial void LogNotifierFailed(Exception ex, string notifier);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "No se pudo publicar en vivo la bitácora de '{Job}'")]
+    private partial void LogLivePublishFailed(Exception ex, string job);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "No se pudo limpiar el directorio temporal {Path}")]
     private partial void LogCleanupFailed(Exception ex, string path);

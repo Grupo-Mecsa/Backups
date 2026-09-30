@@ -8,9 +8,16 @@ public sealed class ProviderBinding
 
     public Dictionary<string, string?> Settings { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Conexión guardada que aporta los datos de acceso. Null = el trabajo guarda toda la configuración.
+    /// Con conexión, <see cref="Settings"/> solo contiene los campos propios del trabajo.
+    /// </summary>
+    public Guid? ConnectionId { get; set; }
+
     public ProviderBinding Clone() => new()
     {
         ProviderKey = ProviderKey,
+        ConnectionId = ConnectionId,
         Settings = new Dictionary<string, string?>(Settings, StringComparer.OrdinalIgnoreCase),
     };
 }

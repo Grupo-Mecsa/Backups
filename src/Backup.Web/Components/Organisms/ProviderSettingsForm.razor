@@ -24,8 +24,13 @@
         </div>
     }
 
+    @if (ChildContent is not null)
+    {
+        @ChildContent
+    }
+
     <div class="form-grid">
-        @foreach (var field in Provider.Descriptor.Fields)
+        @foreach (var field in (Fields ?? Provider.Descriptor.Fields).Where(f => FieldFilter?.Invoke(f) ?? true))
         {
             var id = $"{ErrorPrefix}-{field.Key}";
             var error = ErrorFor(field.Key);
@@ -60,7 +65,15 @@
                                    ValueChanged="v => Set(field.Key, v)" />
                         break;
                     default:
-                        @if (field.Browse != BrowseMode.None && CanBrowse)
+                        @if (field.List != ListMode.None && CanList)
+                        {
+                            <div class="input-group">
+                                <TextInput Id="@id" Value="@Get(field)" Placeholder="@field.Placeholder" Invalid="error is not null"
+                                           ValueChanged="v => Set(field.Key, v)" />
+                                <Button Variant="ButtonVariant.Secondary" Icon="search" Title="Consultar al servidor" OnClick="() => OpenOptions(field)">Elegir</Button>
+                            </div>
+                        }
+                        else if (field.Browse != BrowseMode.None && CanBrowse)
                         {
                             <div class="input-group">
                                 <TextInput Id="@id" Value="@Get(field)" Placeholder="@field.Placeholder" Invalid="error is not null"
@@ -84,7 +97,15 @@
 {
     <FolderExplorerDialog @bind-Visible="_explorerOpen" Mode="_explorerMode" Title="@_explorerTitle" Subtitle="@_explorerSubtitle"
                           StartPath="@_explorerStart" Selection="@_explorerSelection" Loader="OnBrowseHandler"
+                          FolderCreator="@(Provider is IFolderCreator ? OnCreateFolderHandler : null)"
                           OnPicked="path => Set(_explorerField!, path)" OnSelectionApplied="rules => Set(_explorerField!, rules.Length == 0 ? null : rules)" />
+}
+
+@if (OnListHandler is not null && _optionsField is not null)
+{
+    <OptionPickerDialog @bind-Visible="_optionsOpen" Title="@($"Elegir: {_optionsField.Label}")" Multiple="_optionsField.List == ListMode.Multiple"
+                        Value="@Get(_optionsField)" Loader="() => OnListHandler(_optionsField.Key)"
+                        OnApplied="v => Set(_optionsField.Key, v)" />
 }
 
 @code {
@@ -102,6 +123,32 @@
     [Parameter] public Func<string?, Task<BrowseResult>>? OnBrowseHandler { get; set; }
 
     [Parameter] public EventCallback OnChanged { get; set; }
+
+    /// <summary>Crea una carpeta (padre, nombre) desde el explorador. Solo se usa si el proveedor lo permite.</summary>
+    [Parameter] public Func<string, string, Task<CreateFolderResult>>? OnCreateFolderHandler { get; set; }
+
+    /// <summary>Consulta los valores posibles de un campo listable. Si es null, no se ofrece el botón «Elegir».</summary>
+    [Parameter] public Func<string, Task<OptionsResult>>? OnListHandler { get; set; }
+
+    private bool _optionsOpen;
+    private SettingField? _optionsField;
+
+    private bool CanList => Provider is IOptionLister && OnListHandler is not null;
+
+    private void OpenOptions(SettingField field)
+    {
+        _optionsField = field;
+        _optionsOpen = true;
+    }
+
+    /// <summary>Campos a mostrar en lugar de los del descriptor (p. ej. los de una restauración, con sus opciones).</summary>
+    [Parameter] public IReadOnlyList<SettingField>? Fields { get; set; }
+
+    /// <summary>Qué campos mostrar (p. ej. solo los de conexión, o solo los propios del trabajo). Null = todos.</summary>
+    [Parameter] public Func<SettingField, bool>? FieldFilter { get; set; }
+
+    /// <summary>Contenido entre la cabecera y los campos (p. ej. el selector de conexión guardada).</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
 
     private bool _testing;
     private ConnectionTestResult? _testResult;
@@ -155,7 +202,7 @@
 
     private void OpenSelection(SettingField field)
     {
-        var rootField = Provider.Descriptor.Fields.FirstOrDefault(f => f.Key == field.BrowseRootField);
+        var rootField = (Fields ?? Provider.Descriptor.Fields).FirstOrDefault(f => f.Key == field.BrowseRootField);
         var root = rootField is null ? null : Get(rootField);
         if (rootField?.Required == true && string.IsNullOrWhiteSpace(root))
         {

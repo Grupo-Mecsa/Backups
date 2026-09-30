@@ -60,6 +60,7 @@ public sealed partial class BackupWorker(
     BackupQueue queue,
     IBackupRunner runner,
     IRunRepository runs,
+    IRestoreRepository restores,
     IOptions<BackupOptions> options,
     TimeProvider timeProvider,
     ILogger<BackupWorker> logger) : BackgroundService
@@ -67,6 +68,7 @@ public sealed partial class BackupWorker(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var abandoned = await runs.AbandonRunningAsync(stoppingToken);
+        await restores.AbandonRunningAsync(stoppingToken);
         if (abandoned > 0)
         {
             LogAbandoned(abandoned);

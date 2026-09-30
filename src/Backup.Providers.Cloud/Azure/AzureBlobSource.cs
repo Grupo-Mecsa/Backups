@@ -18,6 +18,8 @@ public sealed class AzureBlobSource : IBackupSource, IConnectionTester, IFolderB
             SettingField.Text("include", "Incluir por patrón", placeholder: "*.pdf, *.xlsx", help: "Patrones separados por coma. Vacío = todo."),
         ]);
 
+    public string? ArtifactExtension(ProviderSettings settings) => ".zip";
+
     public async Task<BackupArtifact> CreateArtifactAsync(SourceContext context, CancellationToken cancellationToken)
     {
         var settings = context.Settings;

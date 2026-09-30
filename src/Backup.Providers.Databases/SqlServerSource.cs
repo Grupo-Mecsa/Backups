@@ -7,7 +7,7 @@ namespace Backup.Providers.Databases;
 /// Respaldo nativo de SQL Server (<c>BACKUP DATABASE ... TO DISK</c>). El archivo .bak lo escribe
 /// el propio servidor, por eso se necesita una carpeta compartida entre SQL Server y esta aplicación.
 /// </summary>
-public sealed class SqlServerSource : IBackupSource, IConnectionTester
+public sealed class SqlServerSource : IBackupSource, IConnectionTester, IOptionLister
 {
     public ProviderDescriptor Descriptor { get; } = new(
         "sqlserver",
@@ -16,11 +16,11 @@ public sealed class SqlServerSource : IBackupSource, IConnectionTester
         ProviderCategory.Database,
         "database",
         [
-            SettingField.Text("server", "Servidor", required: true, placeholder: "sql01,1433 o sql01\\INSTANCIA"),
-            SettingField.Text("database", "Base de datos", required: true),
-            SettingField.Text("user", "Usuario", help: "Vacío = autenticación integrada."),
-            SettingField.Secret("password", "Contraseña"),
-            SettingField.Toggle("trustServerCertificate", "Confiar en el certificado del servidor", true),
+            SettingField.Text("server", "Servidor", required: true, placeholder: "sql01,1433 o sql01\\INSTANCIA").ForConnection(),
+            SettingField.Text("database", "Base de datos", required: true).Listable(),
+            SettingField.Text("user", "Usuario", help: "Vacío = autenticación integrada.").ForConnection(),
+            SettingField.Secret("password", "Contraseña").ForConnection(),
+            SettingField.Toggle("trustServerCertificate", "Confiar en el certificado del servidor", true).ForConnection(),
             SettingField.Text("serverBackupPath", "Carpeta de respaldo (vista por SQL Server)", required: true,
                 placeholder: "/var/opt/mssql/backup o D:\\Backups",
                 help: "Ruta donde SQL Server escribirá el .bak."),
@@ -90,6 +90,28 @@ public sealed class SqlServerSource : IBackupSource, IConnectionTester
         }
 
         return $"SQL Server {reader.GetValue(0)} ({reader.GetValue(1)})";
+    }
+
+    public async Task<IReadOnlyList<string>> ListOptionsAsync(string fieldKey, ProviderSettings settings, CancellationToken cancellationToken)
+    {
+        if (fieldKey != "database")
+        {
+            throw new NotSupportedException($"El campo '{fieldKey}' no se puede listar.");
+        }
+
+        await using var connection = new SqlConnection(BuildConnectionString(settings));
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        // Sin tempdb (no se respalda) y solo las bases a las que el usuario tiene acceso.
+        command.CommandText = "SELECT name FROM sys.databases WHERE name <> 'tempdb' AND HAS_DBACCESS(name) = 1 ORDER BY name";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var names = new List<string>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            names.Add(reader.GetString(0));
+        }
+
+        return names;
     }
 
     private static string BuildConnectionString(ProviderSettings settings)

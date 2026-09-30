@@ -23,6 +23,25 @@
                 return next;
             }
         };
+        // navigator.clipboard solo existe en HTTPS o localhost; en http://ip:puerto se copia con un textarea temporal.
+        window.backupClipboard = {
+            copy: async function (text) {
+                if (navigator.clipboard && window.isSecureContext) {
+                    try { await navigator.clipboard.writeText(text); return true; } catch (e) { }
+                }
+                var area = document.createElement('textarea');
+                area.value = text;
+                area.setAttribute('readonly', '');
+                area.style.position = 'fixed';
+                area.style.opacity = '0';
+                document.body.appendChild(area);
+                area.select();
+                var ok = false;
+                try { ok = document.execCommand('copy'); } catch (e) { }
+                document.body.removeChild(area);
+                return ok;
+            }
+        };
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

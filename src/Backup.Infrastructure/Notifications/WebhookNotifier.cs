@@ -35,9 +35,12 @@ public sealed class WebhookNotifier(IHttpClientFactory httpClientFactory, IOptio
         var client = httpClientFactory.CreateClient(nameof(WebhookNotifier));
         var payload = new
         {
-            text = run.Status == RunStatus.Succeeded
-                ? $"✅ Respaldo '{run.JobName}' completado ({ByteSize.Format(run.SizeBytes)})."
-                : $"❌ Respaldo '{run.JobName}' {(run.Status == RunStatus.Cancelled ? "cancelado" : "falló")}: {run.Error}",
+            text = run.Status switch
+            {
+                RunStatus.Succeeded => $"✅ Respaldo '{run.JobName}' completado ({ByteSize.Format(run.SizeBytes)}).",
+                RunStatus.Warning => $"⚠️ Respaldo '{run.JobName}' completado con advertencias ({ByteSize.Format(run.SizeBytes)}): {run.Error}",
+                _ => $"❌ Respaldo '{run.JobName}' {(run.Status == RunStatus.Cancelled ? "cancelado" : "falló")}: {run.Error}",
+            },
             job = run.JobName,
             jobId = run.JobId,
             runId = run.Id,

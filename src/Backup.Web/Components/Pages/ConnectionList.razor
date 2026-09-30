@@ -1,0 +1,109 @@
+@page "/connections"
+@attribute [Authorize(Policy = AppPolicies.CanManage)]
+@inject ConnectionService Connections
+@inject ToastService Toasts
+
+<PageTemplate Title="Conexiones" Subtitle="Datos de acceso reutilizables: configúralos una vez y elígelos en cada trabajo">
+    <Actions>
+        <Button Href="/connections/new" Icon="plus">Nueva conexión</Button>
+    </Actions>
+    <ChildContent>
+        @if (_connections is null)
+        {
+            <div class="skeleton skeleton--card"></div>
+        }
+        else if (_connections.Count == 0)
+        {
+            <EmptyState Icon="key" Title="Todavía no hay conexiones"
+                        Text="Guarda aquí servidores y credenciales (FTP, bases de datos, S3...) para no repetirlos en cada trabajo. También puedes guardarlas desde el asistente de un trabajo.">
+                <Button Href="/connections/new" Icon="plus">Crear la primera</Button>
+            </EmptyState>
+        }
+        else
+        {
+            <Card Animate="false">
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Tipo</th>
+                                <th>Acceso</th>
+                                <th>Trabajos</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in _connections)
+                            {
+                                <tr @key="item.Connection.Id">
+                                    <td><a href="@($"/connections/{item.Connection.Id}")"><strong>@item.Connection.Name</strong></a></td>
+                                    <td><span class="inline-icon"><Icon Name="@item.ProviderIcon" Size="15" /> @item.ProviderName</span></td>
+                                    <td class="muted mono">@(ConnectionChooser.Summary(item.Connection) is { Length: > 0 } summary ? summary : "—")</td>
+                                    <td>
+                                        @if (item.JobCount == 0)
+                                        {
+                                            <span class="muted">Sin usar</span>
+                                        }
+                                        else
+                                        {
+                                            <Badge Tone="Tone.Info">@item.JobCount</Badge>
+                                        }
+                                    </td>
+                                    <td class="table__actions">
+                                        <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="edit" Href="@($"/connections/{item.Connection.Id}")">Editar</Button>
+                                        <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="trash" OnClick="() => AskDelete(item)">Eliminar</Button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
+        }
+    </ChildContent>
+</PageTemplate>
+
+<ConfirmDialog @bind-Visible="_confirmDelete" Danger Title="¿Eliminar conexión?" ConfirmText="Eliminar"
+               Message="@($"Se eliminará \"{_pendingDelete?.Connection.Name}\" y sus credenciales guardadas.")"
+               OnConfirm="Delete" />
+
+@code {
+    private IReadOnlyList<ConnectionSummary>? _connections;
+    private bool _confirmDelete;
+    private ConnectionSummary? _pendingDelete;
+
+    protected override async Task OnInitializedAsync() => _connections = await Connections.ListAsync();
+
+    private void AskDelete(ConnectionSummary item)
+    {
+        if (item.JobCount > 0)
+        {
+            Toasts.Error("Está en uso", $"La usan {item.JobCount} trabajo(s). Cámbialos a otra conexión antes de eliminarla.");
+            return;
+        }
+
+        _pendingDelete = item;
+        _confirmDelete = true;
+    }
+
+    private async Task Delete()
+    {
+        if (_pendingDelete is null)
+        {
+            return;
+        }
+
+        if (await Connections.DeleteAsync(_pendingDelete.Connection.Id) is { } problem)
+        {
+            Toasts.Error("No se pudo eliminar", problem);
+        }
+        else
+        {
+            Toasts.Success("Conexión eliminada", _pendingDelete.Connection.Name);
+        }
+
+        _pendingDelete = null;
+        _connections = await Connections.ListAsync();
+    }
+}

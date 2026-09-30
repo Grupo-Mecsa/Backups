@@ -11,7 +11,9 @@ namespace Backup.Infrastructure.Persistence;
 public sealed class BackupDbContext(DbContextOptions<BackupDbContext> options) : IdentityDbContext<ApplicationUser>(options)
 {
     public DbSet<JobRecord> Jobs => Set<JobRecord>();
+    public DbSet<ConnectionRecord> Connections => Set<ConnectionRecord>();
     public DbSet<BackupRun> Runs => Set<BackupRun>();
+    public DbSet<RestoreOperation> Restores => Set<RestoreOperation>();
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<NotificationSettings> NotificationSettings => Set<NotificationSettings>();
     public DbSet<TelegramSubscription> TelegramSubscriptions => Set<TelegramSubscription>();
@@ -73,10 +75,34 @@ public sealed class BackupDbContext(DbContextOptions<BackupDbContext> options) :
             job.Property(j => j.Description).HasMaxLength(500);
             job.Property(j => j.SourceProvider).HasMaxLength(50).IsRequired();
             job.Property(j => j.DestinationProvider).HasMaxLength(50).IsRequired();
+            job.Property(j => j.RestoreProvider).HasMaxLength(50);
             job.Property(j => j.Schedule).HasMaxLength(100);
             job.Property(j => j.TimeZone).HasMaxLength(100);
             job.Property(j => j.Compression).HasConversion<string>().HasMaxLength(20);
             job.HasIndex(j => new { j.TenantId, j.Name });
+        });
+
+        modelBuilder.Entity<ConnectionRecord>(connection =>
+        {
+            connection.ToTable("Connections");
+            connection.HasKey(c => c.Id);
+            connection.Property(c => c.Name).HasMaxLength(100).IsRequired();
+            connection.Property(c => c.ProviderKey).HasMaxLength(50).IsRequired();
+            connection.HasIndex(c => new { c.TenantId, c.Name });
+        });
+
+        modelBuilder.Entity<RestoreOperation>(restore =>
+        {
+            restore.ToTable("Restores");
+            restore.HasKey(r => r.Id);
+            restore.Ignore(r => r.Duration);
+            restore.Property(r => r.JobName).HasMaxLength(100);
+            restore.Property(r => r.ArtifactName).HasMaxLength(500);
+            restore.Property(r => r.TargetProvider).HasMaxLength(50);
+            restore.Property(r => r.TargetSummary).HasMaxLength(500);
+            restore.Property(r => r.RequestedBy).HasMaxLength(256);
+            restore.Property(r => r.Status).HasConversion<string>().HasMaxLength(20);
+            restore.HasIndex(r => new { r.TenantId, r.StartedAt });
         });
 
         modelBuilder.Entity<BackupRun>(run =>
@@ -106,14 +132,31 @@ public sealed class JobRecord
     public bool Enabled { get; set; }
     public string SourceProvider { get; set; } = string.Empty;
     public string SourceSettingsJson { get; set; } = "{}";
+    public Guid? SourceConnectionId { get; set; }
     public string DestinationProvider { get; set; } = string.Empty;
     public string DestinationSettingsJson { get; set; } = "{}";
+    public Guid? DestinationConnectionId { get; set; }
+    public string? RestoreProvider { get; set; }
+    public string? RestoreSettingsJson { get; set; }
+    public Guid? RestoreConnectionId { get; set; }
     public string? Schedule { get; set; }
     public string TimeZone { get; set; } = "UTC";
     public Domain.Jobs.CompressionKind Compression { get; set; }
     public string? EncryptionPassphrase { get; set; }
     public int KeepLast { get; set; }
     public int KeepDays { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>Fila de una conexión reutilizable. Los datos de acceso se guardan como JSON, con los secretos cifrados.</summary>
+public sealed class ConnectionRecord
+{
+    public Guid Id { get; set; }
+    public Guid TenantId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string ProviderKey { get; set; } = string.Empty;
+    public string SettingsJson { get; set; } = "{}";
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

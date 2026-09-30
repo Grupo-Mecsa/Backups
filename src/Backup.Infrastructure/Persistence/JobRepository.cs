@@ -75,8 +75,13 @@ public sealed class JobRepository(
             Enabled = copy.Enabled,
             SourceProvider = copy.Source.ProviderKey,
             SourceSettingsJson = JsonSerializer.Serialize(copy.Source.Settings),
+            SourceConnectionId = copy.Source.ConnectionId,
             DestinationProvider = copy.Destination.ProviderKey,
             DestinationSettingsJson = JsonSerializer.Serialize(copy.Destination.Settings),
+            DestinationConnectionId = copy.Destination.ConnectionId,
+            RestoreProvider = copy.RestoreTarget?.ProviderKey,
+            RestoreSettingsJson = copy.RestoreTarget is null ? null : JsonSerializer.Serialize(copy.RestoreTarget.Settings),
+            RestoreConnectionId = copy.RestoreTarget?.ConnectionId,
             Schedule = copy.Schedule,
             TimeZone = copy.TimeZone,
             Compression = copy.Compression,
@@ -97,8 +102,24 @@ public sealed class JobRepository(
             Name = record.Name,
             Description = record.Description,
             Enabled = record.Enabled,
-            Source = new ProviderBinding { ProviderKey = record.SourceProvider, Settings = Deserialize(record.SourceSettingsJson) },
-            Destination = new ProviderBinding { ProviderKey = record.DestinationProvider, Settings = Deserialize(record.DestinationSettingsJson) },
+            Source = new ProviderBinding
+            {
+                ProviderKey = record.SourceProvider,
+                Settings = Deserialize(record.SourceSettingsJson),
+                ConnectionId = record.SourceConnectionId,
+            },
+            Destination = new ProviderBinding
+            {
+                ProviderKey = record.DestinationProvider,
+                Settings = Deserialize(record.DestinationSettingsJson),
+                ConnectionId = record.DestinationConnectionId,
+            },
+            RestoreTarget = string.IsNullOrEmpty(record.RestoreProvider) ? null : new ProviderBinding
+            {
+                ProviderKey = record.RestoreProvider,
+                Settings = Deserialize(record.RestoreSettingsJson ?? "{}"),
+                ConnectionId = record.RestoreConnectionId,
+            },
             Schedule = record.Schedule,
             TimeZone = record.TimeZone,
             Compression = record.Compression,

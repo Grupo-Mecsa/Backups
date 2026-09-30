@@ -38,7 +38,7 @@
                     </td>
                     <td class="table__chevron"><Icon Name="chevron-right" Size="16" /></td>
                 </tr>
-                @if (run.Status == RunStatus.Failed && !string.IsNullOrEmpty(run.Error))
+                @if (run.Status is RunStatus.Failed or RunStatus.Warning && !string.IsNullOrEmpty(run.Error))
                 {
                     <tr class="table__error-row" @onclick="() => Open(run)">
                         <td colspan="@(ShowJob ? 7 : 6)"><Icon Name="alert" Size="13" /> @run.Error</td>

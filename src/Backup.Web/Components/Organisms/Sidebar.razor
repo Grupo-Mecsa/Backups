@@ -43,10 +43,19 @@
         <NavLink class="sidebar__link" href="/runs">
             <Icon Name="history" /> <span>Historial</span>
         </NavLink>
+        @if (User.CanManage)
+        {
+            <NavLink class="sidebar__link" href="/restores">
+                <Icon Name="refresh" /> <span>Restauraciones</span>
+            </NavLink>
+        }
 
         @if (User.CanManage)
         {
             <p class="sidebar__section">Administración</p>
+            <NavLink class="sidebar__link" href="/connections">
+                <Icon Name="key" /> <span>Conexiones</span>
+            </NavLink>
             <NavLink class="sidebar__link" href="/admin/users">
                 <Icon Name="users" /> <span>Usuarios</span>
             </NavLink>

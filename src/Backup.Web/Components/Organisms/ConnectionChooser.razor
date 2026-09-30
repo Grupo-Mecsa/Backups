@@ -1,0 +1,90 @@
+@* Elegir una conexión guardada para un origen/destino, o configurar los datos de acceso desde cero (y guardarlos). *@
+@inject ConnectionService Connections
+
+<div class="connection-chooser">
+    <p class="connection-chooser__label">Datos de acceso</p>
+    <div class="chips chips--compact" role="group" aria-label="Conexión">
+        <button type="button" class="chip @(Binding.ConnectionId is null ? "is-active" : null)" @onclick="() => Select(null)">
+            <Icon Name="plus" Size="14" /> Configurar desde cero
+        </button>
+        @foreach (var connection in _connections)
+        {
+            <button type="button" class="chip @(Binding.ConnectionId == connection.Id ? "is-active" : null)" @onclick="() => Select(connection.Id)">
+                <Icon Name="key" Size="14" /> @connection.Name
+            </button>
+        }
+    </div>
+
+    @if (Selected is { } selected)
+    {
+        <div class="callout callout--info animate-in">
+            <Icon Name="info" Size="16" />
+            <span>
+                Usa la conexión <strong>@selected.Name</strong>@(Summary(selected) is { Length: > 0 } summary ? $" ({summary})" : null).
+                Si la cambias, el cambio aplica a todos los trabajos que la usan.
+                <a href="@($"/connections/{selected.Id}")" target="_blank">Editar conexión</a>
+            </span>
+        </div>
+    }
+    else if (AllowSave)
+    {
+        <div class="connection-chooser__save">
+            <Toggle Value="SaveAsNew" ValueChanged="SetSaveAsNew" Label="Guardar estos datos de acceso como conexión reutilizable" />
+            @if (SaveAsNew)
+            {
+                <FormField Label="Nombre de la conexión" For="@($"{IdPrefix}-connection-name")" Error="@NameError" Class="animate-in">
+                    <TextInput Id="@($"{IdPrefix}-connection-name")" Value="@NewName" Placeholder="@NamePlaceholder" Invalid="NameError is not null"
+                               ValueChanged="SetNewName" />
+                </FormField>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ProviderBinding Binding { get; set; } = default!;
+    [Parameter] public string IdPrefix { get; set; } = "conn";
+
+    /// <summary>Ofrecer "guardar como conexión" al configurar desde cero.</summary>
+    [Parameter] public bool AllowSave { get; set; } = true;
+    [Parameter] public bool SaveAsNew { get; set; }
+    [Parameter] public EventCallback<bool> SaveAsNewChanged { get; set; }
+    [Parameter] public string? NewName { get; set; }
+    [Parameter] public EventCallback<string?> NewNameChanged { get; set; }
+    [Parameter] public string? NameError { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private IReadOnlyList<Connection> _connections = [];
+    private string? _loadedFor;
+
+    private Connection? Selected => _connections.FirstOrDefault(c => c.Id == Binding.ConnectionId);
+
+    private string NamePlaceholder => Summary(new Connection { Settings = Binding.Settings }) is { Length: > 0 } summary ? summary : "Servidor de producción";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Recargar al cambiar de proveedor o si la conexión elegida aún no está en la lista (recién creada).
+        var key = Binding.ProviderKey;
+        if (_loadedFor != key || (Binding.ConnectionId is { } id && _connections.All(c => c.Id != id)))
+        {
+            _loadedFor = key;
+            _connections = await Connections.ListForProviderAsync(key);
+        }
+    }
+
+    /// <summary>Resumen legible de a dónde apunta: servidor, recurso/bucket y usuario.</summary>
+    public static string Summary(Connection connection) => string.Join(" · ",
+        new[] { "host", "server", "share", "bucket", "container", "user" }
+            .Select(k => connection.Settings.GetValueOrDefault(k))
+            .Where(v => !string.IsNullOrWhiteSpace(v)));
+
+    private async Task Select(Guid? id)
+    {
+        Binding.ConnectionId = id;
+        await OnChanged.InvokeAsync();
+    }
+
+    private Task SetSaveAsNew(bool value) => SaveAsNewChanged.InvokeAsync(value);
+
+    private Task SetNewName(string? value) => NewNameChanged.InvokeAsync(value);
+}

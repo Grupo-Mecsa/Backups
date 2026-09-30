@@ -35,8 +35,8 @@ public sealed class DashboardService(
         var allJobs = await jobs.ListAsync(user.TenantId, cancellationToken);
         var weekRuns = await runs.ListAsync(new RunQuery(Since: now.AddDays(-7), Take: 5000, TenantId: user.TenantId), cancellationToken);
 
-        var finished = weekRuns.Where(r => r.Status is RunStatus.Succeeded or RunStatus.Failed).ToList();
-        var succeeded = finished.Count(r => r.Status == RunStatus.Succeeded);
+        var finished = weekRuns.Where(r => r.Status is RunStatus.Succeeded or RunStatus.Warning or RunStatus.Failed).ToList();
+        var succeeded = finished.Count(r => r.Status != RunStatus.Failed);
 
         var today = DateOnly.FromDateTime(timeProvider.GetLocalNow().Date);
         var daily = Enumerable.Range(0, 7)
@@ -44,7 +44,7 @@ public sealed class DashboardService(
             .Select(day =>
             {
                 var ofDay = finished.Where(r => DateOnly.FromDateTime(r.StartedAt.ToLocalTime().Date) == day).ToList();
-                return new DailyRunStat(day, ofDay.Count(r => r.Status == RunStatus.Succeeded), ofDay.Count(r => r.Status == RunStatus.Failed));
+                return new DailyRunStat(day, ofDay.Count(r => r.Status is RunStatus.Succeeded or RunStatus.Warning), ofDay.Count(r => r.Status == RunStatus.Failed));
             })
             .ToList();
 

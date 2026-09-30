@@ -1,15 +1,46 @@
+@using System.Globalization
+@using System.Text.RegularExpressions
 @using Backup.Application.Abstractions
 @inject IScheduleCalculator Calculator
 
 <div class="schedule">
-    <div class="chips" role="group" aria-label="Frecuencias predefinidas">
+    <div class="chips" role="group" aria-label="Frecuencia">
         @foreach (var preset in Presets)
         {
-            <button type="button" class="chip @(IsActive(preset.Cron) ? "is-active" : null)" @onclick="() => SetSchedule(preset.Cron)">
+            <button type="button" class="chip @(_kind == preset.Kind ? "is-active" : null)" @onclick="() => Choose(preset.Kind)">
                 <Icon Name="@preset.Icon" Size="14" /> @preset.Label
             </button>
         }
     </div>
+
+    @if (_kind is Kind.Daily or Kind.Weekly or Kind.Monthly)
+    {
+        <div class="schedule__builder form-grid animate-in">
+            @if (_kind == Kind.Weekly)
+            {
+                <FormField Label="Días">
+                    <div class="chips chips--compact" role="group" aria-label="Días de la semana">
+                        @foreach (var (day, label) in WeekDays)
+                        {
+                            <button type="button" class="chip chip--sm @(_days.Contains(day) ? "is-active" : null)"
+                                    aria-pressed="@_days.Contains(day)" @onclick="() => ToggleDay(day)">@label</button>
+                        }
+                    </div>
+                </FormField>
+            }
+            else if (_kind == Kind.Monthly)
+            {
+                <FormField Label="Día del mes" For="month-day" Help="Los meses que no tienen ese día (p. ej. 31) se saltan.">
+                    <SelectInput Id="month-day" Value="@_dayOfMonth.ToString(CultureInfo.InvariantCulture)" Options="MonthDays"
+                                 ValueChanged="SetDayOfMonth" />
+                </FormField>
+            }
+
+            <FormField Label="Hora" For="time">
+                <TextInput Id="time" Type="time" Icon="clock" Value="@($"{_hour:00}:{_minute:00}")" ValueChanged="SetTime" />
+            </FormField>
+        </div>
+    }
 
     <div class="form-grid">
         <FormField Label="Expresión cron" For="cron" Error="@Error"
@@ -47,17 +78,30 @@
 </div>
 
 @code {
-    private sealed record Preset(string Label, string? Cron, string Icon);
+    private enum Kind { Manual, Hourly, EverySixHours, Daily, Weekly, Monthly, Custom }
+
+    private sealed record Preset(string Label, Kind Kind, string Icon);
 
     private static readonly Preset[] Presets =
     [
-        new("Manual", null, "pause"),
-        new("Cada hora", "0 * * * *", "refresh"),
-        new("Cada 6 horas", "0 */6 * * *", "clock"),
-        new("Diario 02:00", "0 2 * * *", "moon"),
-        new("Semanal (dom 03:00)", "0 3 * * 0", "calendar"),
-        new("Mensual (día 1)", "0 4 1 * *", "calendar"),
+        new("Manual", Kind.Manual, "pause"),
+        new("Cada hora", Kind.Hourly, "refresh"),
+        new("Cada 6 horas", Kind.EverySixHours, "clock"),
+        new("Diario", Kind.Daily, "moon"),
+        new("Semanal", Kind.Weekly, "calendar"),
+        new("Mensual", Kind.Monthly, "calendar"),
     ];
+
+    /// <summary>Lunes primero; en cron el domingo es 0.</summary>
+    private static readonly (int Day, string Label)[] WeekDays =
+        [(1, "Lun"), (2, "Mar"), (3, "Mié"), (4, "Jue"), (5, "Vie"), (6, "Sáb"), (0, "Dom")];
+
+    private static readonly SelectOption[] MonthDays =
+        [.. Enumerable.Range(1, 31).Select(d => new SelectOption(d.ToString(CultureInfo.InvariantCulture), d.ToString(CultureInfo.InvariantCulture)))];
+
+    private static readonly Regex DailyCron = new(@"^(\d{1,2}) (\d{1,2}) \* \* \*$", RegexOptions.Compiled);
+    private static readonly Regex WeeklyCron = new(@"^(\d{1,2}) (\d{1,2}) \* \* ([0-7](?:,[0-7])*)$", RegexOptions.Compiled);
+    private static readonly Regex MonthlyCron = new(@"^(\d{1,2}) (\d{1,2}) (\d{1,2}) \* \*$", RegexOptions.Compiled);
 
     private static readonly string[] Zones = [.. TimeZoneInfo.GetSystemTimeZones().Select(z => z.Id).Append("UTC").Distinct().Order()];
 
@@ -68,14 +112,124 @@
     [Parameter] public string? Error { get; set; }
 
     private List<DateTimeOffset> _preview = [];
+    private Kind _kind;
+    private int _hour = 2;
+    private int _minute;
+    private SortedSet<int> _days = [0];
+    private int _dayOfMonth = 1;
 
-    protected override void OnParametersSet() => UpdatePreview();
+    protected override void OnParametersSet()
+    {
+        Parse();
+        UpdatePreview();
+    }
 
-    private bool IsActive(string? cron) => string.Equals(Schedule?.Trim(), cron, StringComparison.Ordinal);
+    /// <summary>Reconoce las formas que el constructor sabe editar; cualquier otra queda como cron personalizado.</summary>
+    private void Parse()
+    {
+        var cron = Schedule?.Trim();
+        _kind = Kind.Custom;
+        if (cron is null)
+        {
+            _kind = Kind.Manual;
+        }
+        else if (cron == "0 * * * *")
+        {
+            _kind = Kind.Hourly;
+        }
+        else if (cron == "0 */6 * * *")
+        {
+            _kind = Kind.EverySixHours;
+        }
+        else if (DailyCron.Match(cron) is { Success: true } daily && TrySetTime(daily))
+        {
+            _kind = Kind.Daily;
+        }
+        else if (WeeklyCron.Match(cron) is { Success: true } weekly && TrySetTime(weekly))
+        {
+            _kind = Kind.Weekly;
+            _days = [.. weekly.Groups[3].Value.Split(',').Select(d => int.Parse(d, CultureInfo.InvariantCulture) % 7)];
+        }
+        else if (MonthlyCron.Match(cron) is { Success: true } monthly && TrySetTime(monthly)
+                 && int.Parse(monthly.Groups[3].Value, CultureInfo.InvariantCulture) is >= 1 and <= 31 and var day)
+        {
+            _kind = Kind.Monthly;
+            _dayOfMonth = day;
+        }
+    }
+
+    private bool TrySetTime(Match match)
+    {
+        var minute = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
+        var hour = int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture);
+        if (minute > 59 || hour > 23)
+        {
+            return false;
+        }
+
+        (_hour, _minute) = (hour, minute);
+        return true;
+    }
+
+    private Task Choose(Kind kind)
+    {
+        // Al pasar de una frecuencia sin hora (manual, cada hora…) se proponen los horarios de siempre.
+        if (_kind is not (Kind.Daily or Kind.Weekly or Kind.Monthly))
+        {
+            (_hour, _minute) = kind switch { Kind.Weekly => (3, 0), Kind.Monthly => (4, 0), _ => (2, 0) };
+        }
+
+        _kind = kind;
+        return SetSchedule(Build());
+    }
+
+    private Task ToggleDay(int day)
+    {
+        if (!_days.Remove(day))
+        {
+            _days.Add(day);
+        }
+        else if (_days.Count == 0)
+        {
+            _days.Add(day); // al menos un día
+            return Task.CompletedTask;
+        }
+
+        return SetSchedule(Build());
+    }
+
+    private Task SetDayOfMonth(string? value)
+    {
+        _dayOfMonth = int.TryParse(value, CultureInfo.InvariantCulture, out var day) ? Math.Clamp(day, 1, 31) : 1;
+        return SetSchedule(Build());
+    }
+
+    private Task SetTime(string? value)
+    {
+        if (!TimeOnly.TryParse(value, CultureInfo.InvariantCulture, out var time))
+        {
+            return Task.CompletedTask;
+        }
+
+        (_hour, _minute) = (time.Hour, time.Minute);
+        return SetSchedule(Build());
+    }
+
+    private string? Build() => _kind switch
+    {
+        Kind.Manual => null,
+        Kind.Hourly => "0 * * * *",
+        Kind.EverySixHours => "0 */6 * * *",
+        Kind.Daily => $"{_minute} {_hour} * * *",
+        Kind.Weekly => $"{_minute} {_hour} * * {string.Join(',', _days)}",
+        Kind.Monthly => $"{_minute} {_hour} {_dayOfMonth} * *",
+        _ => Schedule,
+    };
 
     private async Task SetSchedule(string? value)
     {
         Schedule = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        Parse();
         UpdatePreview();
         await ScheduleChanged.InvokeAsync(Schedule);
     }

@@ -181,6 +181,67 @@ namespace Backup.Infrastructure.Persistence.Migrations
                     b.ToTable("Runs", (string)null);
                 });
 
+            modelBuilder.Entity("Backup.Domain.Runs.RestoreOperation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ArtifactName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("FinishedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("JobName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Log")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RequestedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("StartedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetProvider")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetSummary")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "StartedAt");
+
+                    b.ToTable("Restores", (string)null);
+                });
+
             modelBuilder.Entity("Backup.Domain.Tenants.Tenant", b =>
                 {
                     b.Property<Guid>("Id")
@@ -292,6 +353,42 @@ namespace Backup.Infrastructure.Persistence.Migrations
                     b.ToTable("AspNetUsers", (string)null);
                 });
 
+            modelBuilder.Entity("Backup.Infrastructure.Persistence.ConnectionRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProviderKey")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SettingsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Name");
+
+                    b.ToTable("Connections", (string)null);
+                });
+
             modelBuilder.Entity("Backup.Infrastructure.Persistence.JobRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -308,6 +405,9 @@ namespace Backup.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Description")
                         .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("DestinationConnectionId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("DestinationProvider")
@@ -336,8 +436,21 @@ namespace Backup.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("RestoreConnectionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RestoreProvider")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RestoreSettingsJson")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Schedule")
                         .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("SourceConnectionId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("SourceProvider")

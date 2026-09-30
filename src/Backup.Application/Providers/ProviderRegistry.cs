@@ -10,6 +10,30 @@ public interface IProviderRegistry
     IProvider? Find(ProviderRole role, string key);
 }
 
+public static class ProviderRegistryExtensions
+{
+    /// <summary>Proveedor por clave en cualquier rol: los campos de conexión son los mismos como origen y como destino.</summary>
+    public static IProvider? FindAny(this IProviderRegistry registry, string key) =>
+        registry.Find(ProviderRole.Source, key) ?? registry.Find(ProviderRole.Destination, key);
+
+    /// <summary>Proveedor que puede recibir restauraciones con esa clave (puede estar registrado como origen o como destino).</summary>
+    public static IRestoreTarget? FindRestoreTarget(this IProviderRegistry registry, string key) =>
+        registry.Sources.Cast<IProvider>().Concat(registry.Destinations).OfType<IRestoreTarget>()
+            .FirstOrDefault(p => string.Equals(p.Descriptor.Key, key, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Destinos posibles para restaurar un respaldo (ya descifrado y descomprimido) con ese nombre.</summary>
+    public static IEnumerable<IRestoreTarget> RestoreTargetsFor(this IProviderRegistry registry, string artifactFileName) =>
+        registry.Sources.Cast<IProvider>().Concat(registry.Destinations).OfType<IRestoreTarget>()
+            .Where(t => t.CanRestore(artifactFileName))
+            .DistinctBy(t => t.Descriptor.Key, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Proveedores cuyos datos de acceso pueden guardarse como conexión (uno por clave).</summary>
+    public static IEnumerable<IProvider> ConnectionProviders(this IProviderRegistry registry) =>
+        registry.Sources.Cast<IProvider>().Concat(registry.Destinations)
+            .Where(p => p.Descriptor.SupportsConnections)
+            .DistinctBy(p => p.Descriptor.Key, StringComparer.OrdinalIgnoreCase);
+}
+
 /// <summary>
 /// Catálogo de proveedores armado por inyección de dependencias: cada módulo registra
 /// sus implementaciones y el catálogo las descubre sin conocerlas (DIP/OCP).

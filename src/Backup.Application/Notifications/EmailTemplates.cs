@@ -16,6 +16,7 @@ public static class EmailTemplates
         {
             RunStatus.Succeeded => ("#12a150", "completado", "✅"),
             RunStatus.Cancelled => ("#d98a04", "cancelado", "⚠️"),
+            RunStatus.Warning => ("#d98a04", "completado con advertencias", "⚠️"),
             _ => ("#e5484d", "falló", "❌"),
         };
 

@@ -8,7 +8,7 @@ namespace Backup.Providers.Files.Local;
 /// Carpeta local o volumen montado (en Docker: bind mount, NFS, CIFS...).
 /// Como origen comprime directamente sin copiar a un staging intermedio.
 /// </summary>
-public sealed class LocalFolderSource : IBackupSource, IConnectionTester, IFolderBrowser
+public sealed class LocalFolderSource : IBackupSource, IConnectionTester, IFolderBrowser, IFolderCreator
 {
     public ProviderDescriptor Descriptor { get; } = new(
         "local",
@@ -22,8 +22,15 @@ public sealed class LocalFolderSource : IBackupSource, IConnectionTester, IFolde
             .. FileSessionSource.FilterFields("path"),
         ]);
 
+    /// <summary>Una carpeta se empaqueta en .zip; un archivo suelto se copia con su propia extensión.</summary>
+    public string? ArtifactExtension(ProviderSettings settings) =>
+        settings.Get("path") is { } path && File.Exists(path) ? Path.GetExtension(path) : ".zip";
+
     public Task<FolderListing> BrowseAsync(ProviderSettings settings, string? path, CancellationToken cancellationToken) =>
         Task.FromResult(LocalBrowser.Browse(path));
+
+    public Task<string> CreateFolderAsync(ProviderSettings settings, string parentPath, string name, CancellationToken cancellationToken) =>
+        Task.FromResult(LocalBrowser.CreateFolder(parentPath, name));
 
     public async Task<BackupArtifact> CreateArtifactAsync(SourceContext context, CancellationToken cancellationToken)
     {
@@ -138,7 +145,11 @@ public sealed class LocalFolderSource : IBackupSource, IConnectionTester, IFolde
     }
 }
 
-public sealed class LocalFolderDestination() : FileSessionDestination(new LocalSessionFactory());
+public sealed class LocalFolderDestination() : FileSessionDestination(new LocalSessionFactory()), IFolderCreator
+{
+    public Task<string> CreateFolderAsync(ProviderSettings settings, string parentPath, string name, CancellationToken cancellationToken) =>
+        Task.FromResult(LocalBrowser.CreateFolder(parentPath, name));
+}
 
 internal sealed class LocalSessionFactory : IFileSessionFactory
 {

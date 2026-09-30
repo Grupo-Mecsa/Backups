@@ -1,0 +1,58 @@
+@page "/restores"
+@attribute [Authorize(Policy = AppPolicies.CanManage)]
+@inject RestoreService Restores
+@inject NavigationManager Navigation
+
+<PageTemplate Title="Restauraciones" Subtitle="Qué se restauró, dónde, quién lo pidió y cómo terminó">
+    <ChildContent>
+        @if (_restores is null)
+        {
+            <div class="skeleton skeleton--card"></div>
+        }
+        else if (_restores.Count == 0)
+        {
+            <EmptyState Icon="refresh" Title="Todavía no hay restauraciones"
+                        Text="Para restaurar un respaldo, abre una ejecución correcta en el Historial y pulsa «Restaurar».">
+                <Button Href="/runs" Icon="history" Variant="ButtonVariant.Secondary">Ir al historial</Button>
+            </EmptyState>
+        }
+        else
+        {
+            <Card Animate="false">
+                <div class="table-wrap">
+                    <table class="table table--clickable">
+                        <thead>
+                            <tr>
+                                <th>Estado</th>
+                                <th>Trabajo</th>
+                                <th>Destino</th>
+                                <th>Pedida por</th>
+                                <th>Inicio</th>
+                                <th>Duración</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var restore in _restores)
+                            {
+                                <tr @key="restore.Id" @onclick="@(() => Navigation.NavigateTo($"/restores/{restore.Id}"))">
+                                    <td><RunStatusBadge Status="restore.Status" /></td>
+                                    <td><strong>@restore.JobName</strong></td>
+                                    <td class="muted">@restore.TargetSummary</td>
+                                    <td class="muted">@(restore.RequestedBy ?? "—")</td>
+                                    <td class="muted">@Display.DateTime(restore.StartedAt)</td>
+                                    <td class="muted">@(restore.Status == RunStatus.Running ? "…" : Display.Duration(restore.Duration))</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
+        }
+    </ChildContent>
+</PageTemplate>
+
+@code {
+    private IReadOnlyList<RestoreOperation>? _restores;
+
+    protected override async Task OnInitializedAsync() => _restores = await Restores.ListAsync();
+}

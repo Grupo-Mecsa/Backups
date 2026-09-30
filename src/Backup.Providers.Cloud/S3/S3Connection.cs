@@ -11,14 +11,14 @@ internal static class S3Connection
 {
     public static IReadOnlyList<SettingField> Fields(bool includeStorageClass) =>
     [
-        SettingField.Text("bucket", "Bucket", required: true),
-        SettingField.Text("region", "Región", defaultValue: "us-east-1"),
-        SettingField.Text("accessKey", "Access key", help: "Vacío = credenciales del entorno (IAM role, variables AWS_*)."),
-        SettingField.Secret("secretKey", "Secret key"),
+        SettingField.Text("bucket", "Bucket", required: true).ForConnection(),
+        SettingField.Text("region", "Región", defaultValue: "us-east-1").ForConnection(),
+        SettingField.Text("accessKey", "Access key", help: "Vacío = credenciales del entorno (IAM role, variables AWS_*).").ForConnection(),
+        SettingField.Secret("secretKey", "Secret key").ForConnection(),
         SettingField.Text("prefix", "Prefijo / carpeta", placeholder: "backups/produccion").Browsable(),
         SettingField.Text("serviceUrl", "Endpoint personalizado", placeholder: "https://minio.local:9000",
-            help: "Para servicios compatibles: MinIO, Cloudflare R2, Wasabi, Backblaze B2, DigitalOcean Spaces..."),
-        SettingField.Toggle("forcePathStyle", "Path-style (requerido por MinIO)", false),
+            help: "Para servicios compatibles: MinIO, Cloudflare R2, Wasabi, Backblaze B2, DigitalOcean Spaces...").ForConnection(),
+        SettingField.Toggle("forcePathStyle", "Path-style (requerido por MinIO)", false).ForConnection(),
         .. includeStorageClass
             ? new[]
             {

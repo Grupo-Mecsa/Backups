@@ -90,6 +90,8 @@
         }
         <span class="spacer"></span>
         <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="edit" IconOnly Href="@($"/jobs/{Job.Id}")" Title="Editar" AriaLabel="Editar" />
+        <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="copy" IconOnly Title="Duplicar" AriaLabel="Duplicar"
+                OnClick="() => OnDuplicate.InvokeAsync()" />
         <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="trash" IconOnly Title="Eliminar" AriaLabel="Eliminar"
                 Disabled="Busy" OnClick="() => OnDelete.InvokeAsync()" Class="btn--danger-ghost" />
     </footer>
@@ -108,6 +110,7 @@
     [Parameter] public EventCallback OnRun { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
     [Parameter] public EventCallback OnDelete { get; set; }
+    [Parameter] public EventCallback OnDuplicate { get; set; }
     [Parameter] public EventCallback<bool> OnToggle { get; set; }
 
     private string RetentionLabel => Job.Retention switch

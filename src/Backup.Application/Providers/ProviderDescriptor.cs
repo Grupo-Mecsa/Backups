@@ -11,4 +11,9 @@ public sealed record ProviderDescriptor(
     IReadOnlyList<SettingField> Fields)
 {
     public IEnumerable<SettingField> SecretFields => Fields.Where(f => f.IsSecret);
+
+    public IEnumerable<SettingField> ConnectionFields => Fields.Where(f => f.IsConnection);
+
+    /// <summary>Si sus datos de acceso pueden guardarse como conexión reutilizable.</summary>
+    public bool SupportsConnections => Fields.Any(f => f.IsConnection);
 }

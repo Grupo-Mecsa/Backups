@@ -1,8 +1,12 @@
 @page "/runs/{Id:guid}"
 @inherits LiveComponentBase
 @inject DashboardService Dashboard
+@inject ArtifactService Artifacts
+@inject RestoreService Restores
 @inject JobService JobService
 @inject ToastService Toasts
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
 
 <PageTemplate Title="@(_run?.JobName ?? "Ejecución")" Subtitle="@(_run is null ? null : $"Iniciada {Display.DateTime(_run.StartedAt)}")"
               BackHref="/runs" BackLabel="Historial">
@@ -16,6 +20,7 @@
             else
             {
                 <Button Variant="ButtonVariant.Secondary" Icon="refresh" OnClick="RunAgain">Ejecutar de nuevo</Button>
+                <Button Variant="ButtonVariant.Ghost" Icon="trash" OnClick="() => _confirmDelete = true">Eliminar</Button>
             }
             <Button Variant="ButtonVariant.Ghost" Icon="edit" Href="@($"/jobs/{_run.JobId}")">Editar trabajo</Button>
         }
@@ -60,7 +65,7 @@
 
             @if (_run.Error is not null)
             {
-                <div class="callout callout--danger animate-in"><Icon Name="alert" Size="16" /> <span>@_run.Error</span></div>
+                <div class="callout callout--@(_run.Status == RunStatus.Warning ? "warning" : "danger") animate-in"><Icon Name="alert" Size="16" /> <span>@_run.Error</span></div>
             }
 
             <Card Index="4">
@@ -72,13 +77,115 @@
                 </dl>
             </Card>
 
-            <Card Index="5" Class="log-card">
+            @if (CurrentUser.CanManage && ArtifactService.HasArtifact(_run))
+            {
+                <Card Index="5" Class="artifact-card">
+                    <header class="card__header">
+                        <h2 class="card__title">Respaldo</h2>
+                        <div class="card__actions">
+                            <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="download" Busy="@(_busy == "raw")"
+                                    Disabled="_busy is not null" OnClick="() => DownloadAsync(decoded: false)">
+                                @(Artifacts.IsTransformed(_run) ? "Descargar tal cual" : "Descargar")
+                            </Button>
+                            @if (Artifacts.IsTransformed(_run))
+                            {
+                                <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="download" Busy="@(_busy == "decoded")"
+                                        Disabled="_busy is not null" OnClick="() => DownloadAsync(decoded: true)"
+                                        Title="Descifrado y descomprimido">Descargar @Artifacts.DecodedName(_run)</Button>
+                            }
+                            @if (Restores.TargetsFor(_run).Count > 0)
+                            {
+                                <Button Variant="ButtonVariant.Secondary" Size="ButtonSize.Small" Icon="refresh"
+                                        Href="@($"/runs/{_run.Id}/restore")">Restaurar</Button>
+                            }
+                            @if (_contents is null)
+                            {
+                                <Button Variant="ButtonVariant.Secondary" Size="ButtonSize.Small" Icon="search" Busy="@(_busy == "contents")"
+                                        Disabled="_busy is not null" OnClick="LoadContentsAsync">Ver contenido</Button>
+                            }
+                        </div>
+                    </header>
+
+                    @if (_busy is not null)
+                    {
+                        <p class="muted artifact-card__status"><Spinner Size="14" /> Descargando del destino y verificando el respaldo...</p>
+                    }
+
+                    @if (_artifactError is not null)
+                    {
+                        <div class="callout callout--danger animate-in"><Icon Name="alert" Size="16" /> <span>@_artifactError</span></div>
+                    }
+
+                    @if (_contents is { } contents)
+                    {
+                        @switch (contents.Kind)
+                        {
+                            case ArtifactContentKind.None:
+                                <p class="muted">Este tipo de respaldo (@System.IO.Path.GetExtension(Artifacts.DecodedName(_run))) no se puede listar aquí; descárgalo para revisarlo.</p>
+                                break;
+                            default:
+                                <div class="artifact-card__toolbar">
+                                    <TextInput Icon="search" Placeholder="@(contents.Kind == ArtifactContentKind.Archive ? "Buscar archivos..." : "Buscar tablas u objetos...")"
+                                               Immediate @bind-Value="_filter" />
+                                    <span class="muted">@FilteredEntries.Count() de @contents.Entries.Count @(contents.Kind == ArtifactContentKind.Archive ? "archivos" : "objetos")</span>
+                                </div>
+                                <div class="table-wrap artifact-card__list">
+                                    <table class="table">
+                                        <thead>
+                                            <tr>
+                                                <th>@(contents.Kind == ArtifactContentKind.Archive ? "Archivo" : "Objeto")</th>
+                                                @if (contents.Kind == ArtifactContentKind.Archive)
+                                                {
+                                                    <th>Tamaño</th>
+                                                    <th>Modificado</th>
+                                                    <th></th>
+                                                }
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var entry in FilteredEntries.Take(MaxEntries))
+                                            {
+                                                <tr>
+                                                    <td class="mono break">@entry.Path</td>
+                                                    @if (contents.Kind == ArtifactContentKind.Archive)
+                                                    {
+                                                        <td class="muted">@ByteSize.Format(entry.Size ?? 0)</td>
+                                                        <td class="muted">@Display.DateTime(entry.Modified)</td>
+                                                        <td class="table__actions">
+                                                            <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="download" IconOnly Title="Descargar"
+                                                                    AriaLabel="@($"Descargar {entry.Path}")" Href="@EntryUrl(entry)" download data-enhance-nav="false" />
+                                                        </td>
+                                                    }
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                                @if (FilteredEntries.Count() > MaxEntries)
+                                {
+                                    <p class="muted">Mostrando @MaxEntries. Usa el buscador para acotar.</p>
+                                }
+                                break;
+                        }
+                    }
+                </Card>
+            }
+
+            <Card Index="6" Class="log-card">
                 <header class="card__header">
                     <h2 class="card__title">Bitácora</h2>
-                    @if (_run.Status == RunStatus.Running)
-                    {
-                        <Badge Tone="Tone.Info" Dot Pulse>En vivo</Badge>
-                    }
+                    <div class="card__actions">
+                        @if (_run.Status == RunStatus.Running)
+                        {
+                            <Badge Tone="Tone.Info" Dot Pulse>En vivo</Badge>
+                        }
+                        <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="copy" OnClick="CopyLog">Copiar</Button>
+                        @if (_run.Status != RunStatus.Running)
+                        {
+                            <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="download"
+                                    Href="@($"/runs/{_run.Id}/log")" download data-enhance-nav="false">Descargar log</Button>
+                        }
+                    </div>
                 </header>
                 <pre class="log">@foreach (var line in _run.Log.Split('\n', StringSplitOptions.RemoveEmptyEntries))
 {<span class="log__line @LineClass(line)">@line</span>
@@ -88,11 +195,65 @@
     </ChildContent>
 </PageTemplate>
 
+<ConfirmDialog @bind-Visible="_confirmDelete" Danger Title="¿Eliminar ejecución?" ConfirmText="Eliminar"
+               Message="Se borrará definitivamente del historial, con su bitácora. El respaldo guardado en el destino no se borra."
+               OnConfirm="Delete" />
+
 @code {
     [Parameter] public Guid Id { get; set; }
 
     private BackupRun? _run;
     private bool _notFound;
+    private bool _confirmDelete;
+    private const int MaxEntries = 500;
+    private ArtifactContents? _contents;
+    private string? _artifactError;
+    private string? _busy;
+    private string? _filter;
+
+    private IEnumerable<ArtifactEntry> FilteredEntries => string.IsNullOrWhiteSpace(_filter)
+        ? _contents?.Entries ?? []
+        : (_contents?.Entries ?? []).Where(e => e.Path.Contains(_filter, StringComparison.OrdinalIgnoreCase));
+
+    private string EntryUrl(ArtifactEntry entry) => $"/runs/{Id}/artifact/entry?path={Uri.EscapeDataString(entry.Path)}";
+
+    /// <summary>Prepara el archivo aquí (con progreso y errores visibles) y luego lo entrega el endpoint desde la caché.</summary>
+    private async Task DownloadAsync(bool decoded)
+    {
+        _busy = decoded ? "decoded" : "raw";
+        _artifactError = null;
+        try
+        {
+            await Artifacts.PrepareAsync(Id, CurrentUser.TenantId, decoded);
+            Navigation.NavigateTo($"/runs/{Id}/artifact?decoded={(decoded ? "true" : "false")}", forceLoad: true);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException)
+        {
+            _artifactError = ex.Message;
+        }
+        finally
+        {
+            _busy = null;
+        }
+    }
+
+    private async Task LoadContentsAsync()
+    {
+        _busy = "contents";
+        _artifactError = null;
+        try
+        {
+            _contents = await Artifacts.GetContentsAsync(Id);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException)
+        {
+            _artifactError = ex.Message;
+        }
+        finally
+        {
+            _busy = null;
+        }
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -118,6 +279,36 @@
         if (_run is not null && await JobService.CancelAsync(_run.JobId))
         {
             Toasts.Info("Cancelando ejecución...");
+        }
+    }
+
+    private async Task CopyLog()
+    {
+        if (_run is not null && await JS.InvokeAsync<bool>("backupClipboard.copy", _run.Log))
+        {
+            Toasts.Success("Bitácora copiada");
+        }
+        else
+        {
+            Toasts.Error("No se pudo copiar", "Usa Descargar log.");
+        }
+    }
+
+    private async Task Delete()
+    {
+        if (_run is null)
+        {
+            return;
+        }
+
+        if (await JobService.DeleteRunAsync(_run.Id))
+        {
+            Toasts.Success("Ejecución eliminada", _run.JobName);
+            Navigation.NavigateTo("/runs");
+        }
+        else
+        {
+            Toasts.Error("No se pudo eliminar", "La ejecución sigue en curso o ya no existe.");
         }
     }
 

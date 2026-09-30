@@ -8,8 +8,8 @@ internal static class AzureBlobConnection
     public static IReadOnlyList<SettingField> CommonFields =>
     [
         SettingField.Secret("connectionString", "Cadena de conexión", required: true,
-            help: "Portal de Azure → Cuenta de almacenamiento → Claves de acceso. También acepta una URL SAS del contenedor."),
-        SettingField.Text("container", "Contenedor", required: true, help: "Se ignora si la cadena es una URL SAS de contenedor."),
+            help: "Portal de Azure → Cuenta de almacenamiento → Claves de acceso. También acepta una URL SAS del contenedor.").ForConnection(),
+        SettingField.Text("container", "Contenedor", required: true, help: "Se ignora si la cadena es una URL SAS de contenedor.").ForConnection(),
         SettingField.Text("prefix", "Prefijo / carpeta", placeholder: "backups/produccion").Browsable(),
     ];
 

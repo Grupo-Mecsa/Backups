@@ -42,6 +42,19 @@ public sealed record SettingField(string Key, string Label, SettingFieldType Typ
 
     public SettingField Browsable(BrowseMode mode = BrowseMode.Folder) => this with { Browse = mode };
 
+    /// <summary>
+    /// Dato de acceso (servidor, usuario, contraseña...) que puede guardarse en una conexión reutilizable.
+    /// Los demás campos (carpeta, base de datos, selección...) son siempre propios de cada trabajo.
+    /// </summary>
+    public bool IsConnection { get; init; }
+
+    public SettingField ForConnection() => this with { IsConnection = true };
+
+    /// <summary>Si el proveedor implementa <see cref="IOptionLister"/>, la UI ofrece elegir el valor de una lista.</summary>
+    public ListMode List { get; init; }
+
+    public SettingField Listable(bool multiple = false) => this with { List = multiple ? ListMode.Multiple : ListMode.Single };
+
     /// <summary>Los valores secretos se cifran en reposo y se enmascaran en la UI.</summary>
     public bool IsSecret => Type == SettingFieldType.Password;
 

@@ -9,6 +9,9 @@
     case RunStatus.Failed:
         <Badge Tone="Tone.Danger" Icon="x">Falló</Badge>
         break;
+    case RunStatus.Warning:
+        <Badge Tone="Tone.Warning" Icon="alert">Con advertencias</Badge>
+        break;
     case RunStatus.Cancelled:
         <Badge Tone="Tone.Warning" Icon="stop">Cancelado</Badge>
         break;

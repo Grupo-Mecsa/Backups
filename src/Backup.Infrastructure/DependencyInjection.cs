@@ -45,6 +45,8 @@ public static class DependencyInjection
             ?? $"Data Source={Path.Combine(dataDirectory, "backup.db")}";
         services.AddDbContextFactory<BackupDbContext>(options => options.UseSqlite(connectionString));
         services.AddSingleton<IJobRepository, JobRepository>();
+        services.AddSingleton<IConnectionRepository, ConnectionRepository>();
+        services.AddSingleton<IRestoreRepository, RestoreRepository>();
         services.AddSingleton<IRunRepository, RunRepository>();
         services.AddSingleton<ITenantRepository, TenantRepository>();
         services.AddSingleton<INotificationSettingsRepository, NotificationSettingsRepository>();
@@ -80,6 +82,7 @@ public static class DependencyInjection
         // Pipeline
         services.AddSingleton<IStreamTransform, CompressionTransform>();
         services.AddSingleton<IStreamTransform, EncryptionTransform>();
+        services.AddSingleton<IArtifactDecoder, ArtifactDecoder>();
         services.AddSingleton<IProcessRunner, ProcessRunner>();
 
         // Planificación y ejecución

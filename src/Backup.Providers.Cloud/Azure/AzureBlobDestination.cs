@@ -3,7 +3,7 @@ using Backup.Application.Providers;
 
 namespace Backup.Providers.Cloud.Azure;
 
-public sealed class AzureBlobDestination : IBackupDestination, IConnectionTester, IFolderBrowser
+public sealed class AzureBlobDestination : IBackupDestination, IConnectionTester, IFolderBrowser, IArtifactReader
 {
     public ProviderDescriptor Descriptor { get; } = new(
         "azureblob",
@@ -16,6 +16,12 @@ public sealed class AzureBlobDestination : IBackupDestination, IConnectionTester
             SettingField.Select("accessTier", "Nivel de acceso", ["Hot", "Cool", "Cold", "Archive"], "Cool"),
             SettingField.Toggle("createContainer", "Crear el contenedor si no existe", true),
         ]);
+
+    public async Task DownloadAsync(DestinationContext context, string objectName, string localFile, CancellationToken cancellationToken)
+    {
+        var container = AzureBlobConnection.CreateContainer(context.Settings);
+        await container.GetBlobClient(AzureBlobConnection.BlobName(context.Settings, objectName)).DownloadToAsync(localFile, cancellationToken);
+    }
 
     public async Task UploadAsync(DestinationContext context, string localFile, string objectName, CancellationToken cancellationToken)
     {

@@ -81,7 +81,7 @@
         }
         <div class="form-grid form-grid--single">
             <FormField Label="Nombre" For="t-name" Required>
-                <TextInput Id="t-name" @bind-Value="_name" Placeholder="Grupo Mecsa · Costa Rica" />
+                <TextInput Id="t-name" @bind-Value="_name" Placeholder="Mi empresa · Sede central" />
             </FormField>
             <FormField Label="Estado" Help="Los usuarios de un tenant deshabilitado no pueden iniciar sesión; sus trabajos siguen ejecutándose.">
                 <Toggle @bind-Value="_enabled" Label="@(_enabled ? "Habilitado" : "Deshabilitado")" />

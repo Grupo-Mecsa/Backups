@@ -1,0 +1,155 @@
+@* Elegir uno o varios valores consultados al servidor (bases de datos, esquemas...). *@
+
+<ModalDialog Visible="Visible" VisibleChanged="VisibleChanged" Title="@Title" Icon="database">
+    <ChildContent>
+        @if (_loading)
+        {
+            <div class="explorer__state"><Spinner /> <span>Consultando el servidor...</span></div>
+        }
+        else if (_error is not null)
+        {
+            <div class="callout callout--danger"><Icon Name="alert" Size="16" /> <span>@_error</span></div>
+            <Button Variant="ButtonVariant.Secondary" Icon="refresh" OnClick="LoadAsync">Reintentar</Button>
+        }
+        else
+        {
+            @if (_options.Count > 8)
+            {
+                <div class="option-picker__search">
+                    <TextInput Icon="search" Placeholder="Buscar..." Immediate @bind-Value="_filter" />
+                </div>
+            }
+
+            @if (Multiple)
+            {
+                <p class="option-picker__hint">@(_selected.Count == 0 ? "Ninguno marcado = se respaldan todos." : $"{_selected.Count} marcado(s).")</p>
+            }
+
+            <div class="option-picker__list" role="list">
+                @if (Visible_.Count == 0)
+                {
+                    <div class="explorer__state"><Icon Name="search" Size="22" /> <span>@(_options.Count == 0 ? "El servidor no devolvió valores." : "Sin coincidencias")</span></div>
+                }
+
+                @foreach (var option in Visible_)
+                {
+                    var selected = _selected.Contains(option);
+                    <div role="listitem" @key="option" class="explorer__row @(selected ? "is-picked" : null)">
+                        @if (Multiple)
+                        {
+                            <SelectionCheck State="@(selected ? CheckState.Checked : CheckState.Unchecked)" AriaLabel="@option" OnToggle="() => Toggle(option)" />
+                        }
+                        <button type="button" class="explorer__item" @onclick="() => Activate(option)">
+                            <span class="explorer__icon"><Icon Name="database" Size="16" /></span>
+                            <span class="explorer__name mono">@option</span>
+                        </button>
+                    </div>
+                }
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        @if (Multiple)
+        {
+            <Button Variant="ButtonVariant.Ghost" Disabled="_selected.Count == 0" OnClick="() => _selected.Clear()">Desmarcar todo</Button>
+            <span class="spacer"></span>
+            <Button Variant="ButtonVariant.Secondary" OnClick="() => VisibleChanged.InvokeAsync(false)">Cancelar</Button>
+            <Button Icon="check" Disabled="_loading || _error is not null" OnClick="ApplyAsync">
+                @(_selected.Count == 0 ? "Usar todos" : $"Usar {_selected.Count}")
+            </Button>
+        }
+        else
+        {
+            <span class="spacer"></span>
+            <Button Variant="ButtonVariant.Secondary" OnClick="() => VisibleChanged.InvokeAsync(false)">Cancelar</Button>
+        }
+    </Footer>
+</ModalDialog>
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+    [Parameter] public string Title { get; set; } = "Elegir";
+    [Parameter] public bool Multiple { get; set; }
+
+    /// <summary>Valor actual del campo (varios separados por coma).</summary>
+    [Parameter] public string? Value { get; set; }
+
+    [Parameter, EditorRequired] public Func<Task<OptionsResult>> Loader { get; set; } = default!;
+    [Parameter] public EventCallback<string?> OnApplied { get; set; }
+
+    private IReadOnlyList<string> _options = [];
+    private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
+    private bool _loading;
+    private string? _error;
+    private string? _filter;
+    private bool _wasVisible;
+
+    private List<string> Visible_ => string.IsNullOrWhiteSpace(_filter)
+        ? [.. _options]
+        : [.. _options.Where(o => o.Contains(_filter, StringComparison.OrdinalIgnoreCase))];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Visible && !_wasVisible)
+        {
+            _wasVisible = true;
+            _filter = null;
+            _selected.Clear();
+            foreach (var value in (Value ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                _selected.Add(value);
+            }
+
+            await LoadAsync();
+        }
+        else if (!Visible)
+        {
+            _wasVisible = false;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var result = await Loader();
+            _options = result.Values ?? [];
+            _error = result.Error;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void Toggle(string option)
+    {
+        if (!_selected.Remove(option))
+        {
+            _selected.Add(option);
+        }
+    }
+
+    private async Task Activate(string option)
+    {
+        if (Multiple)
+        {
+            Toggle(option);
+            return;
+        }
+
+        await OnApplied.InvokeAsync(option);
+        await VisibleChanged.InvokeAsync(false);
+    }
+
+    private async Task ApplyAsync()
+    {
+        // Respeta el orden del servidor; los valores escritos a mano que ya no existen se descartan.
+        var value = string.Join(", ", _options.Where(_selected.Contains));
+        await OnApplied.InvokeAsync(value.Length == 0 ? null : value);
+        await VisibleChanged.InvokeAsync(false);
+    }
+}

@@ -61,6 +61,7 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapHealthChecks("/health");
 app.MapAccountEndpoints();
+app.MapRunEndpoints();
 // Sin la compresión la app no puede mostrarse dentro de iframes de otros sitios (antes lo ponía Blazor).
 app.Use((context, next) =>
 {

@@ -4,7 +4,7 @@ using Backup.Application.Providers;
 
 namespace Backup.Providers.Cloud.S3;
 
-public sealed class S3Destination : IBackupDestination, IConnectionTester, IFolderBrowser
+public sealed class S3Destination : IBackupDestination, IConnectionTester, IFolderBrowser, IArtifactReader
 {
     public ProviderDescriptor Descriptor { get; } = new(
         "s3",
@@ -13,6 +13,13 @@ public sealed class S3Destination : IBackupDestination, IConnectionTester, IFold
         ProviderCategory.Cloud,
         "cloud",
         S3Connection.Fields(includeStorageClass: true));
+
+    public async Task DownloadAsync(DestinationContext context, string objectName, string localFile, CancellationToken cancellationToken)
+    {
+        using var client = S3Connection.CreateClient(context.Settings);
+        using var response = await client.GetObjectAsync(context.Settings.Require("bucket"), S3Connection.Key(context.Settings, objectName), cancellationToken);
+        await response.WriteResponseStreamToFileAsync(localFile, append: false, cancellationToken);
+    }
 
     public async Task UploadAsync(DestinationContext context, string localFile, string objectName, CancellationToken cancellationToken)
     {

@@ -1,0 +1,124 @@
+@page "/connections/new"
+@page "/connections/{Id:guid}"
+@attribute [Authorize(Policy = AppPolicies.CanManage)]
+@inject ConnectionService Connections
+@inject IProviderRegistry Registry
+@inject NavigationManager Navigation
+@inject ToastService Toasts
+
+<PageTemplate Title="@(_draft?.IsNew == false ? $"Editar: {_draft.Connection.Name}" : "Nueva conexión")"
+              Subtitle="Servidor y credenciales que podrás elegir en cualquier trabajo"
+              BackHref="/connections" BackLabel="Conexiones">
+    <ChildContent>
+        @if (_draft is null)
+        {
+            @if (_notFound)
+            {
+                <EmptyState Icon="alert" Title="Conexión no encontrada">
+                    <Button Href="/connections" Variant="ButtonVariant.Secondary">Volver a conexiones</Button>
+                </EmptyState>
+            }
+            else
+            {
+                <div class="skeleton skeleton--card"></div>
+            }
+        }
+        else
+        {
+            <Card Class="editor" Animate="false">
+                <div class="form-grid">
+                    <FormField Label="Nombre" For="name" Required Error="@ErrorFor("Name")"
+                               Help="Cómo aparecerá al elegirla en un trabajo, p. ej. «NAS oficina» o «PostgreSQL producción».">
+                        <TextInput Id="name" @bind-Value="_draft.Connection.Name" Placeholder="NAS oficina" Invalid="@(ErrorFor("Name") is not null)" />
+                    </FormField>
+                </div>
+
+                @if (_draft.IsNew)
+                {
+                    <h2 class="editor__title">Tipo</h2>
+                    @if (ErrorFor("Provider") is { } providerError)
+                    {
+                        <div class="callout callout--danger"><Icon Name="alert" Size="16" /> @providerError</div>
+                    }
+                    <ProviderPicker Providers="Registry.ConnectionProviders()" SelectedKey="@_draft.Connection.ProviderKey"
+                                    SelectedKeyChanged="SelectProvider" />
+                }
+                else
+                {
+                    <div class="callout callout--info">
+                        <Icon Name="info" Size="16" />
+                        <span>Los cambios aplican a todos los trabajos que usan esta conexión. Deja las contraseñas vacías para conservar las guardadas.</span>
+                    </div>
+                }
+
+                @if (Registry.FindAny(_draft.Connection.ProviderKey) is { } provider)
+                {
+                    <ProviderSettingsForm Provider="provider" Binding="_binding" ErrorPrefix="Settings" Errors="_errors"
+                                          FieldFilter="f => f.IsConnection"
+                                          HasStoredSecret="key => _draft.HasStoredSecret(key)"
+                                          OnTestHandler="() => Connections.TestAsync(_draft.Connection)" />
+                }
+
+                <footer class="editor__footer">
+                    <Button Variant="ButtonVariant.Secondary" Href="/connections">Cancelar</Button>
+                    <span class="spacer"></span>
+                    <Button Icon="check" Busy="_saving" OnClick="Save">@(_draft.IsNew ? "Crear conexión" : "Guardar cambios")</Button>
+                </footer>
+            </Card>
+        }
+    </ChildContent>
+</PageTemplate>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private ConnectionDraft? _draft;
+    private ProviderBinding _binding = new();
+    private bool _notFound;
+    private bool _saving;
+    private IReadOnlyList<ValidationError> _errors = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _draft = Id is { } id ? await Connections.GetForEditAsync(id) : Connections.NewDraft();
+        _notFound = _draft is null;
+        if (_draft is not null)
+        {
+            Bind();
+        }
+    }
+
+    /// <summary>El formulario de proveedor edita un ProviderBinding; se comparte el mismo diccionario de la conexión.</summary>
+    private void Bind() => _binding = new ProviderBinding { ProviderKey = _draft!.Connection.ProviderKey, Settings = _draft.Connection.Settings };
+
+    private string? ErrorFor(string field) => _errors.FirstOrDefault(e => e.Field == field)?.Message;
+
+    private void SelectProvider(string key)
+    {
+        _draft!.Connection.ProviderKey = key;
+        Connections.ApplyDefaults(_draft.Connection);
+        Bind();
+    }
+
+    private async Task Save()
+    {
+        _saving = true;
+        try
+        {
+            var result = await Connections.SaveAsync(_draft!.Connection);
+            if (result.Success)
+            {
+                Toasts.Success(_draft.IsNew ? "Conexión creada" : "Cambios guardados", _draft.Connection.Name);
+                Navigation.NavigateTo("/connections");
+                return;
+            }
+
+            _errors = result.Errors;
+            Toasts.Error("Revisa el formulario", $"{result.Errors.Count} problema(s) encontrados.");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

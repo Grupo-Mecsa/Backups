@@ -1,0 +1,216 @@
+@page "/runs/{Id:guid}/restore"
+@attribute [Authorize(Policy = AppPolicies.CanManage)]
+@inject RestoreService Restores
+@inject ArtifactService Artifacts
+@inject NavigationManager Navigation
+@inject ToastService Toasts
+
+<PageTemplate Title="Restaurar respaldo" Subtitle="@(_run is null ? null : $"{_run.JobName} · {Display.DateTime(_run.StartedAt)}")"
+              BackHref="@($"/runs/{Id}")" BackLabel="Ejecución">
+    <ChildContent>
+        @if (_run is null)
+        {
+            @if (_notFound)
+            {
+                <EmptyState Icon="alert" Title="Respaldo no disponible" Text="La ejecución no existe o no dejó un respaldo para restaurar." />
+            }
+            else
+            {
+                <div class="skeleton skeleton--card"></div>
+            }
+        }
+        else if (_targets.Count == 0)
+        {
+            <EmptyState Icon="info" Title="No se puede restaurar desde aquí"
+                        Text="@($"Los respaldos {System.IO.Path.GetExtension(Artifacts.DecodedName(_run))} todavía no se restauran desde la web. Descárgalo desde la ejecución y restáuralo con la herramienta del motor.")" />
+        }
+        else
+        {
+            <Card Class="editor" Animate="false">
+                <div class="callout callout--info">
+                    <Icon Name="info" Size="16" />
+                    <span>
+                        Se restaurará <strong class="mono">@Artifacts.DecodedName(_run)</strong> (@ByteSize.Format(_run.SizeBytes)).
+                        Antes, BackupHub lo descarga del destino, verifica su SHA-256 y lo descifra con la contraseña actual del trabajo.
+                    </span>
+                </div>
+
+                <h2 class="editor__title">¿Dónde restaurar?</h2>
+                <div class="chips" role="group" aria-label="Punto de partida">
+                    @foreach (var draft in _presets)
+                    {
+                        <button type="button" class="chip @(_preset == draft.Preset ? "is-active" : null)" @onclick="() => UsePreset(draft)">
+                            <Icon Name="@(draft.Preset == RestorePreset.Source ? "database" : "check")" Size="14" /> @PresetLabel(draft.Preset)
+                        </button>
+                    }
+                    <button type="button" class="chip @(_preset == RestorePreset.Custom ? "is-active" : null)" @onclick="UseCustom">
+                        <Icon Name="edit" Size="14" /> Otro destino
+                    </button>
+                </div>
+                @if (_preset == RestorePreset.Source)
+                {
+                    <div class="callout callout--warning animate-in">
+                        <Icon Name="alert" Size="16" />
+                        <span>Se restaurará <strong>sobre el origen</strong> del respaldo: los mismos datos de acceso y la misma carpeta o base de donde se sacó. Revisa las opciones antes de confirmar.</span>
+                    </div>
+                }
+                @if (ErrorFor("Target") is { } targetError)
+                {
+                    <div class="callout callout--danger"><Icon Name="alert" Size="16" /> @targetError</div>
+                }
+                <ProviderPicker Providers="_targets" SelectedKey="@_target.ProviderKey" SelectedKeyChanged="Select" />
+
+                @if (Selected is { } provider)
+                {
+                    <ProviderSettingsForm Provider="provider" Binding="_target" ErrorPrefix="Target" Errors="_errors"
+                                          Fields="provider.RestoreFields"
+                                          FieldFilter="@(_target.ConnectionId is null ? null : f => !f.IsConnection)"
+                                          HasStoredSecret="key => _preset != RestorePreset.Custom && _stored.Contains(key)"
+                                          OnTestHandler="() => Restores.TestAsync(_target, Secrets)"
+                                          OnBrowseHandler="path => Restores.BrowseAsync(_target, Secrets, path)"
+                                          OnListHandler="key => Restores.ListOptionsAsync(_target, Secrets, key)"
+                                          OnCreateFolderHandler="(parent, name) => Restores.CreateFolderAsync(_target, Secrets, parent, name)">
+                        @if (provider.Descriptor.SupportsConnections)
+                        {
+                            <ConnectionChooser Binding="_target" IdPrefix="restore" AllowSave="false" />
+                        }
+                    </ProviderSettingsForm>
+                }
+
+                <footer class="editor__footer">
+                    <Button Variant="ButtonVariant.Secondary" Href="@($"/runs/{Id}")">Cancelar</Button>
+                    <span class="spacer"></span>
+                    <Button Icon="refresh" Variant="@(Cleans ? ButtonVariant.Danger : ButtonVariant.Primary)" Disabled="Selected is null"
+                            Busy="_starting" OnClick="() => _confirm = true">Restaurar</Button>
+                </footer>
+            </Card>
+        }
+    </ChildContent>
+</PageTemplate>
+
+<ConfirmDialog @bind-Visible="_confirm" Danger="Cleans" Title="¿Restaurar el respaldo?" ConfirmText="Restaurar"
+               Message="@ConfirmMessage" OnConfirm="StartAsync" />
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private BackupRun? _run;
+    private bool _notFound;
+    private IReadOnlyList<IRestoreTarget> _targets = [];
+    private ProviderBinding _target = new();
+    private IReadOnlyList<ValidationError> _errors = [];
+    private bool _confirm;
+    private bool _starting;
+
+    private IRestoreTarget? Selected => _targets.FirstOrDefault(t => string.Equals(t.Descriptor.Key, _target.ProviderKey, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Opciones que borran datos en el destino.</summary>
+    private bool Cleans => _preset == RestorePreset.Source
+        || _target.Settings.GetValueOrDefault("clean") == "true" || _target.Settings.GetValueOrDefault("overwrite") == "true"
+        || _target.Settings.GetValueOrDefault("recreateDatabase") == "true";
+
+    private IReadOnlyList<RestoreDraft> _presets = [];
+    private RestorePreset _preset = RestorePreset.Custom;
+    private IReadOnlySet<string> _stored = new HashSet<string>();
+
+    private RestoreSecrets Secrets => new(_run?.JobId ?? Guid.Empty, _preset);
+
+    private static string PresetLabel(RestorePreset preset) => preset == RestorePreset.Source ? "En el origen" : "Destino del trabajo";
+
+    private void UsePreset(RestoreDraft draft)
+    {
+        _preset = draft.Preset;
+        _target = draft.Binding.Clone();
+        _stored = draft.StoredSecrets;
+        _errors = [];
+    }
+
+    private void UseCustom()
+    {
+        _preset = RestorePreset.Custom;
+        _stored = new HashSet<string>();
+        _target = new ProviderBinding();
+        if (_targets.Count == 1)
+        {
+            Select(_targets[0].Descriptor.Key);
+        }
+    }
+
+    private string ConfirmMessage => Selected is not { } provider
+        ? string.Empty
+        : $"Se restaurará «{(_run is null ? string.Empty : Artifacts.DecodedName(_run))}» en {provider.Descriptor.DisplayName}"
+          + (_preset == RestorePreset.Source ? ", SOBRE EL ORIGEN del respaldo. " : ". ")
+          + (_target.Settings.GetValueOrDefault("recreateDatabase") == "true"
+              ? $"Se BORRARÁ la base «{_target.Settings.GetValueOrDefault("database")}» COMPLETA, con todo su contenido, y se creará de nuevo. "
+              : _target.Settings.GetValueOrDefault("clean") == "true"
+              ? "Se BORRARÁN y volverán a crear las tablas y demás objetos del respaldo que ya existan en esa base, con sus datos. "
+              : _target.Settings.GetValueOrDefault("overwrite") == "true"
+                  ? "Los archivos que ya existan en la carpeta se SOBRESCRIBIRÁN. "
+                  : string.Empty)
+          + "Esta acción escribe en el destino y no se puede deshacer desde BackupHub.";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _run = await Restores.GetRunAsync(Id);
+        _notFound = _run is null;
+        if (_run is null)
+        {
+            return;
+        }
+
+        _targets = Restores.TargetsFor(_run);
+        _presets = await Restores.PresetsAsync(_run);
+
+        // Por defecto, el destino configurado en el trabajo; restaurar en el origen siempre es una elección explícita.
+        if (_presets.FirstOrDefault(p => p.Preset == RestorePreset.JobTarget) is { } jobTarget)
+        {
+            UsePreset(jobTarget);
+        }
+        else
+        {
+            UseCustom();
+        }
+    }
+
+    private void Select(string key)
+    {
+        // Cambiar el tipo de destino es configurarlo a mano.
+        if (_preset != RestorePreset.Custom && !string.Equals(_target.ProviderKey, key, StringComparison.OrdinalIgnoreCase))
+        {
+            _preset = RestorePreset.Custom;
+            _stored = new HashSet<string>();
+        }
+
+        _target = new ProviderBinding { ProviderKey = key };
+        foreach (var field in Selected?.RestoreFields.Where(f => f.DefaultValue is not null) ?? [])
+        {
+            _target.Settings[field.Key] = field.DefaultValue;
+        }
+
+        _errors = [];
+    }
+
+    private string? ErrorFor(string field) => _errors.FirstOrDefault(e => e.Field == field)?.Message;
+
+    private async Task StartAsync()
+    {
+        _starting = true;
+        try
+        {
+            var result = await Restores.StartAsync(Id, _target, Secrets);
+            if (result.Success)
+            {
+                Toasts.Info("Restauración iniciada", "Puedes seguir su avance en vivo.");
+                Navigation.NavigateTo($"/restores/{result.RestoreId}");
+                return;
+            }
+
+            _errors = result.Errors;
+            Toasts.Error("Revisa el formulario", $"{result.Errors.Count} problema(s) encontrados.");
+        }
+        finally
+        {
+            _starting = false;
+        }
+    }
+}

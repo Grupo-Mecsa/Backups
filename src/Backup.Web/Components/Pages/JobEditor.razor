@@ -2,6 +2,7 @@
 @attribute [Authorize(Policy = AppPolicies.CanManage)]
 @page "/jobs/{Id:guid}"
 @inject JobService JobService
+@inject RestoreService Restores
 @inject IProviderRegistry Registry
 @inject NavigationManager Navigation
 @inject ToastService Toasts
@@ -58,9 +59,19 @@
                             @if (Registry.Find(ProviderRole.Source, _job.Source.ProviderKey) is { } source)
                             {
                                 <ProviderSettingsForm Provider="source" Binding="_job.Source" ErrorPrefix="Source" Errors="_errors"
+                                                      FieldFilter="FieldsFor(_job.Source)"
                                                       HasStoredSecret="key => HasStoredSecret(ProviderRole.Source, key)"
                                                       OnTestHandler="() => Test(ProviderRole.Source)"
-                                                      OnBrowseHandler="path => Browse(ProviderRole.Source, path)" />
+                                                      OnBrowseHandler="path => Browse(ProviderRole.Source, path)"
+                                                      OnListHandler="key => ListOptions(ProviderRole.Source, key)"
+                                                      OnCreateFolderHandler="(parent, name) => CreateFolder(ProviderRole.Source, parent, name)">
+                                    @if (source.Descriptor.SupportsConnections)
+                                    {
+                                        <ConnectionChooser Binding="_job.Source" IdPrefix="source"
+                                                           @bind-SaveAsNew="_saveSourceConnection" @bind-NewName="_sourceConnectionName"
+                                                           NameError="@ErrorFor("Source.Connection.Name")" />
+                                    }
+                                </ProviderSettingsForm>
                             }
                             break;
 
@@ -75,9 +86,19 @@
                             @if (Registry.Find(ProviderRole.Destination, _job.Destination.ProviderKey) is { } destination)
                             {
                                 <ProviderSettingsForm Provider="destination" Binding="_job.Destination" ErrorPrefix="Destination" Errors="_errors"
+                                                      FieldFilter="FieldsFor(_job.Destination)"
                                                       HasStoredSecret="key => HasStoredSecret(ProviderRole.Destination, key)"
                                                       OnTestHandler="() => Test(ProviderRole.Destination)"
-                                                      OnBrowseHandler="path => Browse(ProviderRole.Destination, path)" />
+                                                      OnBrowseHandler="path => Browse(ProviderRole.Destination, path)"
+                                                      OnListHandler="key => ListOptions(ProviderRole.Destination, key)"
+                                                      OnCreateFolderHandler="(parent, name) => CreateFolder(ProviderRole.Destination, parent, name)">
+                                    @if (destination.Descriptor.SupportsConnections)
+                                    {
+                                        <ConnectionChooser Binding="_job.Destination" IdPrefix="destination"
+                                                           @bind-SaveAsNew="_saveDestinationConnection" @bind-NewName="_destinationConnectionName"
+                                                           NameError="@ErrorFor("Destination.Connection.Name")" />
+                                    }
+                                </ProviderSettingsForm>
                             }
                             break;
 
@@ -92,15 +113,46 @@
                                               HasStoredPassphrase="_draft.HasStoredSecret(JobSecrets.EncryptionKey)" Errors="_errors" />
                             break;
 
+                        case 5:
+                            <h2 class="editor__title">¿Dónde se restaura?</h2>
+                            <p class="editor__hint">Opcional. Es el destino que vendrá elegido al pulsar «Restaurar» en el historial; ahí se puede cambiar, o restaurar en el origen.</p>
+                            <Toggle Value="_job.RestoreTarget is not null" ValueChanged="SetRestoreEnabled" Label="Definir un destino de restauración predeterminado" />
+                            @if (_job.RestoreTarget is { } restoreTarget)
+                            {
+                                @if (ErrorFor("Restore") is { } restoreError)
+                                {
+                                    <div class="callout callout--danger"><Icon Name="alert" Size="16" /> @restoreError</div>
+                                }
+                                <ProviderPicker Providers="RestoreTargets" SelectedKey="@restoreTarget.ProviderKey" SelectedKeyChanged="SelectRestoreProvider" />
+                                @if (RestoreTargets.FirstOrDefault(t => string.Equals(t.Descriptor.Key, restoreTarget.ProviderKey, StringComparison.OrdinalIgnoreCase)) is { } restoreProvider)
+                                {
+                                    <ProviderSettingsForm Provider="restoreProvider" Binding="restoreTarget" ErrorPrefix="Restore" Errors="_errors"
+                                                          Fields="restoreProvider.RestoreFields"
+                                                          FieldFilter="@(restoreTarget.ConnectionId is null ? null : f => !f.IsConnection)"
+                                                          HasStoredSecret="HasStoredRestoreSecret"
+                                                          OnTestHandler="() => Restores.TestAsync(restoreTarget, RestoreSecrets)"
+                                                          OnBrowseHandler="path => Restores.BrowseAsync(restoreTarget, RestoreSecrets, path)"
+                                                          OnListHandler="key => Restores.ListOptionsAsync(restoreTarget, RestoreSecrets, key)"
+                                                          OnCreateFolderHandler="(parent, name) => Restores.CreateFolderAsync(restoreTarget, RestoreSecrets, parent, name)">
+                                        @if (restoreProvider.Descriptor.SupportsConnections)
+                                        {
+                                            <ConnectionChooser Binding="restoreTarget" IdPrefix="restore" AllowSave="false" />
+                                        }
+                                    </ProviderSettingsForm>
+                                }
+                            }
+                            break;
+
                         default:
                             <h2 class="editor__title">Resumen</h2>
                             <dl class="summary">
                                 <div><dt>Nombre</dt><dd>@(_job.Name is { Length: > 0 } ? _job.Name : "—")</dd></div>
-                                <div><dt>Origen</dt><dd>@(Registry.Find(ProviderRole.Source, _job.Source.ProviderKey)?.Descriptor.DisplayName ?? "—")</dd></div>
-                                <div><dt>Destino</dt><dd>@(Registry.Find(ProviderRole.Destination, _job.Destination.ProviderKey)?.Descriptor.DisplayName ?? "—")</dd></div>
+                                <div><dt>Origen</dt><dd>@(Registry.Find(ProviderRole.Source, _job.Source.ProviderKey)?.Descriptor.DisplayName ?? "—")@ConnectionNote(_job.Source, _saveSourceConnection)</dd></div>
+                                <div><dt>Destino</dt><dd>@(Registry.Find(ProviderRole.Destination, _job.Destination.ProviderKey)?.Descriptor.DisplayName ?? "—")@ConnectionNote(_job.Destination, _saveDestinationConnection)</dd></div>
                                 <div><dt>Horario</dt><dd class="mono">@(_job.Schedule ?? "Manual") <span class="muted">(@_job.TimeZone)</span></dd></div>
                                 <div><dt>Compresión</dt><dd>@_job.Compression</dd></div>
                                 <div><dt>Cifrado</dt><dd>@(_encrypt ? "AES-256" : "No")</dd></div>
+                                <div><dt>Restauración</dt><dd>@(_job.RestoreTarget is { } rt && Restores.TargetsForSource(_job.Source).FirstOrDefault(t => t.Descriptor.Key == rt.ProviderKey) is { } rp ? rp.Descriptor.DisplayName : "Se elige al restaurar")</dd></div>
                                 <div><dt>Retención</dt><dd>Últimos @_job.Retention.KeepLast · @_job.Retention.KeepDays días</dd></div>
                                 <div><dt>Estado</dt><dd>@(_job.Enabled ? "Activo" : "Pausado")</dd></div>
                             </dl>
@@ -142,7 +194,7 @@
 </PageTemplate>
 
 @code {
-    private static readonly string[] Steps = ["General", "Origen", "Destino", "Programación", "Opciones", "Resumen"];
+    private static readonly string[] Steps = ["General", "Origen", "Destino", "Programación", "Opciones", "Restauración", "Resumen"];
 
     [Parameter] public Guid? Id { get; set; }
 
@@ -157,6 +209,11 @@
     private IReadOnlySet<int> _errorSteps = new HashSet<int>();
     private ProviderBinding _originalSource = new();
     private ProviderBinding _originalDestination = new();
+    private ProviderBinding? _originalRestore;
+    private bool _saveSourceConnection;
+    private string? _sourceConnectionName;
+    private bool _saveDestinationConnection;
+    private string? _destinationConnectionName;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -171,10 +228,47 @@
         _encrypt = _draft.HasStoredSecret(JobSecrets.EncryptionKey);
         _originalSource = _job.Source.Clone();
         _originalDestination = _job.Destination.Clone();
+        _originalRestore = _job.RestoreTarget?.Clone();
     }
 
     private string FolderHelp =>
         $"Carpeta en el destino: {Backup.Application.Pipeline.ArtifactNaming.Folder(_job.Name ?? string.Empty)}/";
+
+    /// <summary>Con conexión guardada solo se editan los campos propios del trabajo; los de acceso vienen de ella.</summary>
+    private static Func<SettingField, bool>? FieldsFor(ProviderBinding binding) =>
+        binding.ConnectionId is null ? null : f => !f.IsConnection;
+
+    private static string? ConnectionNote(ProviderBinding binding, bool savingNew) =>
+        binding.ConnectionId is not null ? " · con conexión guardada" : savingNew ? " · se guardará como conexión" : null;
+
+    private IReadOnlyList<IRestoreTarget> RestoreTargets => Restores.TargetsForSource(_job.Source);
+
+    /// <summary>Secretos guardados del destino de restauración de este trabajo (si ya existe).</summary>
+    private RestoreSecrets RestoreSecrets => new(_draft!.IsNew ? Guid.Empty : _job.Id, RestorePreset.JobTarget);
+
+    private bool HasStoredRestoreSecret(string key) =>
+        _draft!.HasStoredSecret(JobSecrets.RestoreKey(key))
+        && string.Equals(_originalRestore?.ProviderKey, _job.RestoreTarget?.ProviderKey, StringComparison.OrdinalIgnoreCase);
+
+    private void SetRestoreEnabled(bool enabled) =>
+        _job.RestoreTarget = enabled ? _originalRestore?.Clone() ?? new ProviderBinding() : null;
+
+    private void SelectRestoreProvider(string key)
+    {
+        if (string.Equals(_originalRestore?.ProviderKey, key, StringComparison.OrdinalIgnoreCase))
+        {
+            _job.RestoreTarget = _originalRestore!.Clone();
+            return;
+        }
+
+        var binding = new ProviderBinding { ProviderKey = key };
+        foreach (var field in RestoreTargets.First(t => t.Descriptor.Key == key).RestoreFields.Where(f => f.DefaultValue is not null))
+        {
+            binding.Settings[field.Key] = field.DefaultValue;
+        }
+
+        _job.RestoreTarget = binding;
+    }
 
     private void GoTo(int step) => _step = Math.Clamp(step, 0, Steps.Length - 1);
 
@@ -221,6 +315,12 @@
     private Task<BrowseResult> Browse(ProviderRole role, string? path) =>
         JobService.BrowseAsync(role, role == ProviderRole.Source ? _job.Source : _job.Destination, _draft!.IsNew ? null : _job.Id, path);
 
+    private Task<CreateFolderResult> CreateFolder(ProviderRole role, string parent, string name) =>
+        JobService.CreateFolderAsync(role, role == ProviderRole.Source ? _job.Source : _job.Destination, _draft!.IsNew ? null : _job.Id, parent, name);
+
+    private Task<OptionsResult> ListOptions(ProviderRole role, string fieldKey) =>
+        JobService.ListOptionsAsync(role, role == ProviderRole.Source ? _job.Source : _job.Destination, _draft!.IsNew ? null : _job.Id, fieldKey);
+
     private async Task Save()
     {
         _saving = true;
@@ -230,6 +330,12 @@
             if (_encrypt && string.IsNullOrEmpty(_passphrase) && !_draft!.HasStoredSecret(JobSecrets.EncryptionKey))
             {
                 errors.Add(new(nameof(BackupJob.EncryptionPassphrase), "Indica la contraseña de cifrado."));
+            }
+
+            if (errors.Count == 0)
+            {
+                await SaveNewConnectionAsync(ProviderRole.Source, errors);
+                await SaveNewConnectionAsync(ProviderRole.Destination, errors);
             }
 
             if (errors.Count == 0)
@@ -257,12 +363,60 @@
         }
     }
 
+    /// <summary>
+    /// Si se pidió "guardar como conexión", la crea con los datos de acceso escritos y hace que el trabajo la use.
+    /// </summary>
+    private async Task SaveNewConnectionAsync(ProviderRole role, List<ValidationError> errors)
+    {
+        var source = role == ProviderRole.Source;
+        var binding = source ? _job.Source : _job.Destination;
+        var wanted = source ? _saveSourceConnection : _saveDestinationConnection;
+        if (!wanted || binding.ConnectionId is not null || Registry.Find(role, binding.ProviderKey) is not { Descriptor.SupportsConnections: true })
+        {
+            return;
+        }
+
+        var prefix = source ? "Source" : "Destination";
+        var name = (source ? _sourceConnectionName : _destinationConnectionName)?.Trim();
+        if (string.IsNullOrEmpty(name))
+        {
+            errors.Add(new($"{prefix}.Connection.Name", "Indica un nombre para la conexión."));
+            return;
+        }
+
+        var result = await JobService.SaveAsConnectionAsync(role, binding, _draft!.IsNew ? null : _job.Id, name);
+        if (!result.Success)
+        {
+            // "Connection.Settings.host" → "Source.host" para que el error aparezca junto a su campo.
+            errors.AddRange(result.Errors.Select(e => e with
+            {
+                Field = e.Field.StartsWith("Connection.Settings.", StringComparison.Ordinal)
+                    ? $"{prefix}.{e.Field["Connection.Settings.".Length..]}"
+                    : $"{prefix}.{e.Field}",
+            }));
+            return;
+        }
+
+        binding.ConnectionId = result.ConnectionId;
+        if (source)
+        {
+            _saveSourceConnection = false;
+        }
+        else
+        {
+            _saveDestinationConnection = false;
+        }
+
+        Toasts.Info("Conexión guardada", name);
+    }
+
     private static int StepOf(string field) => field switch
     {
         "Name" => 0,
         _ when field.StartsWith("Source", StringComparison.Ordinal) => 1,
         _ when field.StartsWith("Destination", StringComparison.Ordinal) => 2,
         "Schedule" => 3,
+        _ when field.StartsWith("Restore", StringComparison.Ordinal) => 5,
         _ => 4,
     };
 }

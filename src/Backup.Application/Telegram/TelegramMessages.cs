@@ -14,6 +14,7 @@ public static class TelegramMessages
         {
             RunStatus.Succeeded => ("✅", "completado"),
             RunStatus.Cancelled => ("⚠️", "cancelado"),
+            RunStatus.Warning => ("⚠️", "completado con advertencias"),
             _ => ("❌", "falló"),
         };
 
