@@ -86,7 +86,7 @@ public sealed partial class BackupRunner(
 #pragma warning restore CA1031
         {
             run.Status = RunStatus.Failed;
-            run.Error = ex.Message;
+            run.Error = ErrorInsights.Describe(ex);
             log.Error(ex);
             LogRunFailed(ex, job.Name);
         }
@@ -112,11 +112,24 @@ public sealed partial class BackupRunner(
 
         var sourceContext = new SourceContext(
             new ProviderSettings(job.Source.Settings), workDir, ArtifactNaming.BaseName(job.Name, run.StartedAt), log);
-        var artifact = await source.CreateArtifactAsync(sourceContext, cancellationToken);
-        log.Info($"Artefacto generado: {Path.GetFileName(artifact.FilePath)} ({ByteSize.Format(new FileInfo(artifact.FilePath).Length)})");
-        await CheckpointAsync(run, log);
+        PackagedArtifact packaged;
+        if (source is IStreamingSource streaming)
+        {
+            // El origen escribe directo en el paquete final: en disco no queda una copia intermedia.
+            var outputPath = Path.Combine(workDir, sourceContext.BaseName + streaming.StreamExtension + ".pkg");
+            packaged = await packager.PackageAsync(job, streaming.StreamExtension, outputPath,
+                output => streaming.WriteArtifactAsync(sourceContext, output, cancellationToken), log, cancellationToken);
+            log.Info($"Artefacto generado: {sourceContext.BaseName}{streaming.StreamExtension} ({ByteSize.Format(packaged.RawSize)}), empaquetado sin copia intermedia");
+        }
+        else
+        {
+            var artifact = await source.CreateArtifactAsync(sourceContext, cancellationToken);
+            log.Info($"Artefacto generado: {Path.GetFileName(artifact.FilePath)} ({ByteSize.Format(new FileInfo(artifact.FilePath).Length)})");
+            await CheckpointAsync(run, log);
+            packaged = await packager.PackageAsync(job, artifact, log, cancellationToken);
+        }
 
-        var packaged = await packager.PackageAsync(job, artifact, log, cancellationToken);
+        await CheckpointAsync(run, log);
         var objectName = ArtifactNaming.ObjectName(job.Name, run.StartedAt, packaged.Extensions);
         run.ArtifactName = objectName;
         run.SizeBytes = packaged.Size;

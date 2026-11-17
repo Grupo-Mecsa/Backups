@@ -108,6 +108,11 @@ public static class DependencyInjection
         services.AddSingleton<ITelegramBot>(sp => sp.GetRequiredService<TelegramBotClient>());
         services.AddHostedService<TelegramPollingService>();
 
+        // WhatsApp (WAHA): la API key va en una cabecera; el cliente HTTP tampoco registra peticiones.
+        services.Configure<WhatsApp.WhatsAppOptions>(configuration.GetSection(WhatsApp.WhatsAppOptions.SectionName));
+        services.AddHttpClient(WhatsApp.WahaClient.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(30)).RemoveAllLoggers();
+        services.AddSingleton<Application.WhatsApp.IWhatsAppSender, WhatsApp.WahaClient>();
+
         return services;
     }
 

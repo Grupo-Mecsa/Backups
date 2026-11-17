@@ -48,6 +48,11 @@ public sealed class NotificationSettingsRepository(
             settings.Password = protector.Unprotect(settings.Password);
         }
 
+        if (settings is not null && !string.IsNullOrEmpty(settings.WahaApiKey))
+        {
+            settings.WahaApiKey = protector.Unprotect(settings.WahaApiKey);
+        }
+
         return settings;
     }
 
@@ -69,6 +74,14 @@ public sealed class NotificationSettingsRepository(
             Recipients = settings.Recipients?.Trim(),
             NotifyOnFailure = settings.NotifyOnFailure,
             NotifyOnSuccess = settings.NotifyOnSuccess,
+            WhatsAppEnabled = settings.WhatsAppEnabled,
+            WhatsAppRecipients = settings.WhatsAppRecipients?.Trim(),
+            WhatsAppOnFailure = settings.WhatsAppOnFailure,
+            WhatsAppOnSuccess = settings.WhatsAppOnSuccess,
+            UsePlatformWhatsApp = settings.UsePlatformWhatsApp,
+            WahaUrl = settings.WahaUrl?.Trim().TrimEnd('/'),
+            WahaApiKey = string.IsNullOrEmpty(settings.WahaApiKey) ? null : protector.Protect(settings.WahaApiKey),
+            WahaSession = settings.WahaSession?.Trim(),
         };
 
         var exists = await db.NotificationSettings.AnyAsync(s => s.TenantId == settings.TenantId, cancellationToken);

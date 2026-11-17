@@ -1,0 +1,192 @@
+@* Vista de lista de los trabajos: una fila por trabajo, ordenable, con las mismas acciones que JobCard. *@
+@inject NavigationManager Navigation
+
+<div class="table-wrap">
+    <table class="table job-table">
+        <thead>
+            <tr>
+                <th class="job-table__toggle" aria-label="Activo"></th>
+                <th>@SortHeader(JobSort.Name, "Trabajo")</th>
+                <th class="job-table__flow-col">Origen → Destino</th>
+                <th class="job-table__hide-md">Programación</th>
+                <th>@SortHeader(JobSort.Next, "Próxima")</th>
+                <th>@SortHeader(JobSort.Last, "Última")</th>
+                <th class="job-table__hide-md">Opciones</th>
+                @if (CanManage)
+                {
+                    <th aria-label="Acciones"></th>
+                }
+            </tr>
+        </thead>
+        <tbody>
+            @{ var index = 0; }
+            @foreach (var job in Sorted)
+            {
+                var busy = IsBusy(job);
+                var last = LastRun(job);
+                var next = NextRun(job);
+                var source = Source(job);
+                var destination = Destination(job);
+                <tr @key="job.Id" class="table__row animate-in @(job.Enabled ? null : "is-disabled") @(busy ? "is-running" : null)"
+                    style="--i: @Math.Min(index++, 12)" @onclick="() => Open(job)">
+                    <td class="job-table__toggle" @onclick:stopPropagation="true">
+                        <Toggle Value="job.Enabled" Disabled="!CanManage" ValueChanged="v => OnToggle.InvokeAsync((job, v))" />
+                    </td>
+                    <td class="job-table__name">
+                        <span class="strong">@job.Name</span>
+                        @if (!string.IsNullOrWhiteSpace(job.Description))
+                        {
+                            <span class="job-table__desc">@job.Description</span>
+                        }
+                    </td>
+                    <td class="job-table__flow-col">
+                        <span class="job-table__flow">
+                            <span class="job-table__provider" title="@(source?.DisplayName ?? job.Source.ProviderKey)">
+                                <Icon Name="@(source?.Icon ?? "info")" Size="14" /> <span>@(source?.DisplayName ?? job.Source.ProviderKey)</span>
+                            </span>
+                            <Icon Name="arrow-right" Size="13" Class="job-table__arrow" />
+                            <span class="job-table__provider" title="@(destination?.DisplayName ?? job.Destination.ProviderKey)">
+                                <Icon Name="@(destination?.Icon ?? "info")" Size="14" /> <span>@(destination?.DisplayName ?? job.Destination.ProviderKey)</span>
+                            </span>
+                        </span>
+                    </td>
+                    <td class="job-table__hide-md">
+                        @if (job.Schedule is not null)
+                        {
+                            <Badge Class="mono">@job.Schedule</Badge>
+                        }
+                        else
+                        {
+                            <span class="muted">Manual</span>
+                        }
+                    </td>
+                    <td>
+                        @if (next is not null)
+                        {
+                            <span title="@Display.DateTime(next)">@Display.Relative(next)</span>
+                        }
+                        else
+                        {
+                            <span class="muted">—</span>
+                        }
+                    </td>
+                    <td @onclick:stopPropagation="last is not null">
+                        @if (busy)
+                        {
+                            <RunStatusBadge Status="RunStatus.Running" />
+                        }
+                        else if (last is not null)
+                        {
+                            <a href="@($"/runs/{last.Id}")" class="meta__run" title="@Display.DateTime(last.StartedAt)">
+                                <RunStatusBadge Status="last.Status" />
+                                <span class="muted">@Display.Relative(last.StartedAt)</span>
+                            </a>
+                        }
+                        else
+                        {
+                            <span class="muted">Sin ejecuciones</span>
+                        }
+                    </td>
+                    <td class="job-table__hide-md">
+                        <span class="job-table__tags">
+                            @if (job.Compression != CompressionKind.None)
+                            {
+                                <Badge Icon="zap">@job.Compression</Badge>
+                            }
+                            @if (job.IsEncrypted)
+                            {
+                                <Badge Icon="lock" Tone="Tone.Accent">AES-256</Badge>
+                            }
+                            @if (!job.Retention.IsUnlimited)
+                            {
+                                <Badge Icon="shield">@RetentionLabel(job)</Badge>
+                            }
+                        </span>
+                    </td>
+                    @if (CanManage)
+                    {
+                        <td class="job-table__actions" @onclick:stopPropagation="true">
+                            @if (busy)
+                            {
+                                <Button Variant="ButtonVariant.Secondary" Size="ButtonSize.Small" Icon="stop" IconOnly Title="Cancelar" AriaLabel="Cancelar"
+                                        OnClick="() => OnCancel.InvokeAsync(job)" />
+                            }
+                            else
+                            {
+                                <Button Size="ButtonSize.Small" Icon="play" IconOnly Title="Ejecutar ahora" AriaLabel="Ejecutar ahora"
+                                        OnClick="() => OnRun.InvokeAsync(job)" />
+                            }
+                            <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="edit" IconOnly Href="@($"/jobs/{job.Id}")" Title="Editar" AriaLabel="Editar" />
+                            <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="copy" IconOnly Title="Duplicar" AriaLabel="Duplicar"
+                                    OnClick="() => OnDuplicate.InvokeAsync(job)" />
+                            <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="trash" IconOnly Title="Eliminar" AriaLabel="Eliminar"
+                                    Disabled="busy" OnClick="() => OnDelete.InvokeAsync(job)" Class="btn--danger-ghost" />
+                        </td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    public enum JobSort { Name, Next, Last }
+
+    [Parameter, EditorRequired] public IEnumerable<BackupJob> Jobs { get; set; } = [];
+    [Parameter, EditorRequired] public Func<BackupJob, ProviderDescriptor?> Source { get; set; } = _ => null;
+    [Parameter, EditorRequired] public Func<BackupJob, ProviderDescriptor?> Destination { get; set; } = _ => null;
+    [Parameter, EditorRequired] public Func<BackupJob, BackupRun?> LastRun { get; set; } = _ => null;
+    [Parameter, EditorRequired] public Func<BackupJob, DateTimeOffset?> NextRun { get; set; } = _ => null;
+    [Parameter, EditorRequired] public Func<BackupJob, bool> IsBusy { get; set; } = _ => false;
+    [Parameter] public bool CanManage { get; set; } = true;
+    [Parameter] public EventCallback<BackupJob> OnRun { get; set; }
+    [Parameter] public EventCallback<BackupJob> OnCancel { get; set; }
+    [Parameter] public EventCallback<BackupJob> OnDelete { get; set; }
+    [Parameter] public EventCallback<BackupJob> OnDuplicate { get; set; }
+    [Parameter] public EventCallback<(BackupJob Job, bool Enabled)> OnToggle { get; set; }
+
+    private JobSort _sort = JobSort.Name;
+    private bool _descending;
+
+    private IEnumerable<BackupJob> Sorted
+    {
+        get
+        {
+            // Los vacíos (sin próxima o sin última ejecución) van siempre al final.
+            IOrderedEnumerable<BackupJob> ordered = _sort switch
+            {
+                JobSort.Next => Jobs.OrderBy(j => NextRun(j) is null).Then(j => NextRun(j), _descending),
+                JobSort.Last => Jobs.OrderBy(j => LastRun(j) is null).Then(j => LastRun(j)?.StartedAt, !_descending),
+                _ => _descending
+                    ? Jobs.OrderByDescending(j => j.Name, StringComparer.CurrentCultureIgnoreCase)
+                    : Jobs.OrderBy(j => j.Name, StringComparer.CurrentCultureIgnoreCase),
+            };
+            return ordered;
+        }
+    }
+
+    private RenderFragment SortHeader(JobSort sort, string label) => @<button type="button" class="table__sort @(_sort == sort ? "is-active" : null)"
+                                                                            aria-sort="@(_sort == sort ? (_descending ? "descending" : "ascending") : "none")"
+                                                                            @onclick="() => SortBy(sort)">
+        @label
+        @if (_sort == sort)
+        {
+            <span class="table__sort-arrow">@(_descending ? "↓" : "↑")</span>
+        }
+    </button>;
+
+    private void SortBy(JobSort sort)
+    {
+        _descending = _sort == sort && !_descending;
+        _sort = sort;
+    }
+
+    private void Open(BackupJob job) => Navigation.NavigateTo(CanManage ? $"/jobs/{job.Id}" : "/runs");
+
+    private static string RetentionLabel(BackupJob job) => job.Retention switch
+    {
+        { KeepLast: > 0, KeepDays: > 0 } r => $"{r.KeepLast} / {r.KeepDays} d",
+        { KeepLast: > 0 } r => $"Últimos {r.KeepLast}",
+        var r => $"{r.KeepDays} días",
+    };
+}

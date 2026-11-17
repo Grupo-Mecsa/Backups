@@ -2,12 +2,18 @@
 @inherits LiveComponentBase
 @inject DashboardService Dashboard
 @inject JobService JobService
+@inject ToastService Toasts
+@using Backup.Application.Abstractions
 
 <PageTemplate Title="Historial" Subtitle="Todas las ejecuciones, en vivo">
     <Actions>
         <div class="filter">
             <SelectInput Placeholder="Todos los trabajos" Options="_jobOptions" Value="@_jobFilter?.ToString()" ValueChanged="Filter" />
         </div>
+        @if (CurrentUser.CanManage)
+        {
+            <Button Variant="ButtonVariant.Secondary" Icon="trash" OnClick="OpenCleanup">Limpiar historial</Button>
+        }
     </Actions>
     <ChildContent>
         <Card Animate="false">
@@ -27,10 +33,134 @@
     </ChildContent>
 </PageTemplate>
 
+<ModalDialog @bind-Visible="_cleanupOpen" Title="Limpiar historial" Icon="trash">
+    <ChildContent>
+        <div class="cleanup">
+            <p class="cleanup__label">Qué borrar</p>
+            <div class="segmented">
+                <button type="button" class="segmented__item @(_scope == RunCleanupScope.Unsuccessful ? "is-active" : null)" @onclick="() => SetScope(RunCleanupScope.Unsuccessful)">
+                    <span class="segmented__label">Fallidas y canceladas</span>
+                    <span class="segmented__hint">No tienen respaldo que restaurar.</span>
+                </button>
+                <button type="button" class="segmented__item @(_scope == RunCleanupScope.All ? "is-active" : null)" @onclick="() => SetScope(RunCleanupScope.All)">
+                    <span class="segmented__label">Todas</span>
+                    <span class="segmented__hint">Incluye las correctas y con advertencias.</span>
+                </button>
+            </div>
+
+            <p class="cleanup__label">Antigüedad</p>
+            <div class="chips chips--compact">
+                @foreach (var (days, label) in Ages)
+                {
+                    <button type="button" class="chip chip--sm @(_olderThan == days ? "is-active" : null)" @onclick="() => SetAge(days)">@label</button>
+                }
+            </div>
+
+            <p class="cleanup__label">Trabajo</p>
+            <SelectInput Placeholder="Todos los trabajos" Options="_jobOptions" Value="@_cleanupJob?.ToString()" ValueChanged="SetCleanupJob" />
+
+            @if (_scope == RunCleanupScope.All)
+            {
+                <div class="callout callout--warning animate-in">
+                    <Icon Name="alert" Size="16" />
+                    <span>Los respaldos ya guardados en los destinos <strong>no se borran</strong>, pero ya no podrás revisarlos, descargarlos ni restaurarlos desde BackupHub: tendrías que recuperarlos a mano del destino.</span>
+                </div>
+            }
+
+            <div class="cleanup__count" role="status">
+                @if (_counting)
+                {
+                    <Spinner /> <span>Contando…</span>
+                }
+                else
+                {
+                    <strong>@_toDelete</strong> <span>ejecución(es) se borrarán. Las que están en curso nunca se tocan.</span>
+                }
+            </div>
+        </div>
+    </ChildContent>
+    <Footer>
+        <Button Variant="ButtonVariant.Secondary" OnClick="() => _cleanupOpen = false">Cancelar</Button>
+        <span class="spacer"></span>
+        <Button Variant="ButtonVariant.Danger" Icon="trash" Busy="_clearing" Disabled="_counting || _toDelete == 0" OnClick="Clear">
+            Borrar @_toDelete
+        </Button>
+    </Footer>
+</ModalDialog>
+
 @code {
     private IReadOnlyList<BackupRun>? _runs;
     private IEnumerable<SelectOption> _jobOptions = [];
     private Guid? _jobFilter;
+
+    private static readonly (int Days, string Label)[] Ages =
+        [(0, "Cualquiera"), (7, "Más de 7 días"), (30, "Más de 30 días"), (90, "Más de 90 días")];
+
+    private bool _cleanupOpen;
+    private RunCleanupScope _scope = RunCleanupScope.Unsuccessful;
+    private int _olderThan;
+    private Guid? _cleanupJob;
+    private int _toDelete;
+    private bool _counting;
+    private bool _clearing;
+
+    private RunCleanup Cleanup => new(_scope, _cleanupJob, _olderThan);
+
+    private async Task OpenCleanup()
+    {
+        _scope = RunCleanupScope.Unsuccessful;
+        _olderThan = 0;
+        _cleanupJob = _jobFilter;
+        _cleanupOpen = true;
+        await CountAsync();
+    }
+
+    private Task SetScope(RunCleanupScope scope)
+    {
+        _scope = scope;
+        return CountAsync();
+    }
+
+    private Task SetAge(int days)
+    {
+        _olderThan = days;
+        return CountAsync();
+    }
+
+    private Task SetCleanupJob(string? value)
+    {
+        _cleanupJob = Guid.TryParse(value, out var id) ? id : null;
+        return CountAsync();
+    }
+
+    private async Task CountAsync()
+    {
+        _counting = true;
+        try
+        {
+            _toDelete = await JobService.CountRunsToClearAsync(Cleanup);
+        }
+        finally
+        {
+            _counting = false;
+        }
+    }
+
+    private async Task Clear()
+    {
+        _clearing = true;
+        try
+        {
+            var removed = await JobService.ClearRunsAsync(Cleanup);
+            _cleanupOpen = false;
+            Toasts.Success("Historial limpiado", $"Se borraron {removed} ejecución(es).");
+            await LoadAsync();
+        }
+        finally
+        {
+            _clearing = false;
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {

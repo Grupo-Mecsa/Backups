@@ -36,6 +36,13 @@ public static class TelegramMessages
         if (run.Error is not null)
         {
             lines.Add(string.Empty);
+            var insight = Runs.ErrorInsights.Explain(run.Error);
+            if (insight.Recognized)
+            {
+                lines.Add($"⚠️ <b>{E(insight.Title)}</b>");
+                lines.Add($"💡 {E(insight.Hint!)}");
+            }
+
             lines.Add($"<pre>{E(Truncate(run.Error, 1500))}</pre>");
         }
 

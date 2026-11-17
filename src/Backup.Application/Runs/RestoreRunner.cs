@@ -90,7 +90,7 @@ public sealed partial class RestoreRunner(
 #pragma warning restore CA1031
         {
             restore.Status = RunStatus.Failed;
-            restore.Error = ex.Message;
+            restore.Error = ErrorInsights.Describe(ex);
             log.Error(ex);
         }
         finally

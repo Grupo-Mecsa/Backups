@@ -2,10 +2,11 @@
 @attribute [Authorize(Policy = AppPolicies.CanManage)]
 @using Backup.Application.Notifications
 @using Backup.Domain.Notifications
+@using Backup.Application.WhatsApp
 @inject NotificationService Notifications
 @inject ToastService Toasts
 
-<PageTemplate Title="Alertas" Subtitle="Avisos por correo y Telegram cuando un respaldo falla (o también cuando termina bien)">
+<PageTemplate Title="Alertas" Subtitle="Avisos por correo, WhatsApp y Telegram cuando un respaldo falla (o también cuando termina bien)">
     <ChildContent>
         @if (_settings is null)
         {
@@ -17,7 +18,7 @@
                 <div class="options">
                     <section class="options__section">
                         <header class="options__header">
-                            <Icon Name="mail" /> <h3>Alertas</h3>
+                            <Icon Name="mail" /> <h3>Correo</h3>
                             <Toggle @bind-Value="_settings.Enabled" Label="@(_settings.Enabled ? "Activadas" : "Desactivadas")" />
                         </header>
                         <div class="form-grid">
@@ -95,6 +96,88 @@
             </Card>
 
             <Card Class="editor" Animate="false">
+                <div class="options">
+                    <section class="options__section">
+                        <header class="options__header">
+                            <Icon Name="whatsapp" /> <h3>WhatsApp</h3>
+                            <Toggle @bind-Value="_settings.WhatsAppEnabled" Label="@(_settings.WhatsAppEnabled ? "Activadas" : "Desactivadas")" />
+                        </header>
+                        <div class="form-grid">
+                            <FormField Label="Avisar cuando">
+                                <div class="stack">
+                                    <Toggle @bind-Value="_settings.WhatsAppOnFailure" Label="Un respaldo falla, se cancela o termina con advertencias" />
+                                    <Toggle @bind-Value="_settings.WhatsAppOnSuccess" Label="Un respaldo termina correctamente" />
+                                </div>
+                            </FormField>
+                            <FormField Label="Destinatarios" For="wa-recipients" Required="_settings.WhatsAppEnabled" Error="@ErrorFor(nameof(NotificationSettings.WhatsAppRecipients))"
+                                       Help="Números con código de país o grupos (usa «Agregar grupo»). Uno por línea o separados por coma." Class="field--wide">
+                                <TextInput Id="wa-recipients" Multiline Rows="3" @bind-Value="_settings.WhatsAppRecipients" Placeholder="+506 7070 7070, +506 8888 8888" />
+                            </FormField>
+                        </div>
+                    </section>
+
+                    <section class="options__section">
+                        <header class="options__header">
+                            <Icon Name="server" /> <h3>Conexión con WAHA</h3>
+                        </header>
+                        @if (Notifications.PlatformWhatsApp is { } platformWhatsApp)
+                        {
+                            <Toggle Value="_settings.UsePlatformWhatsApp" ValueChanged="SetUsePlatformWhatsApp" Label="@($"Usar la instancia de la plataforma ({platformWhatsApp})")" />
+                        }
+                        @if (ErrorFor(nameof(NotificationSettings.UsePlatformWhatsApp)) is { } platformWhatsAppError)
+                        {
+                            <div class="callout callout--danger"><Icon Name="alert" Size="16" /> <span>@platformWhatsAppError</span></div>
+                        }
+                        @if (!_settings.UsePlatformWhatsApp)
+                        {
+                            <p class="muted editor__lead">
+                                <a href="https://waha.devlike.pro" target="_blank" rel="noopener">WAHA</a> (WhatsApp HTTP API) envía los mensajes desde una cuenta de WhatsApp vinculada.
+                                La URL debe ser accesible desde el servidor de BackupHub.
+                            </p>
+                            <div class="form-grid">
+                                <FormField Label="URL de WAHA" For="waha-url" Required Error="@ErrorFor(nameof(NotificationSettings.WahaUrl))">
+                                    <TextInput Id="waha-url" Value="@_settings.WahaUrl" Placeholder="http://192.168.1.3:3000" ValueChanged="v => { _settings.WahaUrl = v; _whatsAppStatus = null; }" />
+                                </FormField>
+                                <FormField Label="API key" For="waha-key" Hint="@(_hasWhatsAppKey ? "guardada" : null)" Help="El valor de WAHA_API_KEY de la instancia.">
+                                    <TextInput Id="waha-key" Type="password" Value="@_settings.WahaApiKey" ValueChanged="v => { _settings.WahaApiKey = v; _whatsAppStatus = null; }"
+                                               Placeholder="@(_hasWhatsAppKey ? "•••••••• (sin cambios)" : null)" />
+                                </FormField>
+                                <FormField Label="Sesión" For="waha-session" Required Error="@ErrorFor(nameof(NotificationSettings.WahaSession))" Help="Cuenta de WhatsApp desde la que se envía.">
+                                    <div class="input-group">
+                                        <TextInput Id="waha-session" Value="@_settings.WahaSession" Placeholder="default" ValueChanged="v => { _settings.WahaSession = v; _whatsAppStatus = null; }" />
+                                        <Button Variant="ButtonVariant.Secondary" Icon="search" Title="Consultar las sesiones de WAHA" OnClick="() => _sessionsOpen = true">Elegir</Button>
+                                    </div>
+                                </FormField>
+                            </div>
+                        }
+                        <div class="settings-form__footer">
+                            <Button Variant="ButtonVariant.Secondary" Icon="plug" Busy="_checkingWhatsApp" OnClick="TestWhatsApp">Probar conexión</Button>
+                            @if (_whatsAppStatus is not null)
+                            {
+                                <div class="callout callout--@(_whatsAppStatus.Success ? "success" : "danger") animate-in" role="status">
+                                    <Icon Name="@(_whatsAppStatus.Success ? "check" : "alert")" Size="16" /> <span>@_whatsAppStatus.Message</span>
+                                </div>
+                            }
+                        </div>
+                    </section>
+                </div>
+
+                @if (_whatsAppTest is not null)
+                {
+                    <div class="callout callout--@(_whatsAppTest.Success ? "success" : "danger") animate-in"><Icon Name="@(_whatsAppTest.Success ? "check" : "alert")" Size="16" /> <span>@_whatsAppTest.Message</span></div>
+                }
+                <footer class="editor__footer">
+                    <Button Variant="ButtonVariant.Secondary" Icon="users" OnClick="() => _groupsOpen = true">Agregar grupo</Button>
+                    <Button Variant="ButtonVariant.Secondary" Icon="send" Busy="_testingWhatsApp" OnClick="SendWhatsAppTest">Enviar mensaje de prueba</Button>
+                    <span class="spacer"></span>
+                    <Button Icon="check" Busy="_saving" OnClick="Save">Guardar</Button>
+                </footer>
+            </Card>
+
+            <OptionPickerDialog @bind-Visible="_groupsOpen" Title="Agregar un grupo de WhatsApp" Loader="LoadGroups" OnApplied="AddGroup" />
+            <OptionPickerDialog @bind-Visible="_sessionsOpen" Title="Elegir la sesión de WAHA" Value="@_settings.WahaSession" Loader="LoadSessions" OnApplied="SetSession" />
+
+            <Card Class="editor" Animate="false">
                 <header class="options__header">
                     <Icon Name="send" /> <h3>Telegram</h3>
                 </header>
@@ -131,7 +214,113 @@
     private ConnectionTestResult? _testResult;
     private IReadOnlyList<ValidationError> _errors = [];
 
-    protected override async Task OnInitializedAsync() => (_settings, _hasPassword) = await Notifications.GetAsync();
+    private bool _groupsOpen;
+    private bool _sessionsOpen;
+    private bool _testingWhatsApp;
+    private bool _checkingWhatsApp;
+    private bool _hasWhatsAppKey;
+    private ConnectionTestResult? _whatsAppTest;
+    private ConnectionTestResult? _whatsAppStatus;
+
+    protected override async Task OnInitializedAsync()
+    {
+        (_settings, _hasPassword, _hasWhatsAppKey) = await Notifications.GetAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // El estado de WhatsApp se consulta después de pintar la página: WAHA puede tardar en responder.
+        if (firstRender && _settings is not null && _settings.WhatsAppEnabled
+            && (_settings.UsePlatformWhatsApp || !string.IsNullOrWhiteSpace(_settings.WahaUrl)))
+        {
+            await TestWhatsApp();
+            StateHasChanged();
+        }
+    }
+
+    private void SetUsePlatformWhatsApp(bool value)
+    {
+        _settings!.UsePlatformWhatsApp = value;
+        _whatsAppStatus = null;
+    }
+
+    private async Task TestWhatsApp()
+    {
+        _checkingWhatsApp = true;
+        _whatsAppStatus = null;
+        try
+        {
+            _whatsAppStatus = await Notifications.TestWhatsAppAsync(Copy());
+        }
+        finally
+        {
+            _checkingWhatsApp = false;
+        }
+    }
+
+    private async Task<OptionsResult> LoadSessions()
+    {
+        try
+        {
+            var sessions = await Notifications.ListWhatsAppSessionsAsync(Copy());
+            return sessions.Count == 0
+                ? OptionsResult.Fail("WAHA no tiene sesiones. Crea una y vincula WhatsApp desde su panel.")
+                : OptionsResult.Ok([.. sessions.Select(s => s.Name)]);
+        }
+#pragma warning disable CA1031 // El error se muestra en el diálogo
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            return OptionsResult.Fail(ex.Message);
+        }
+    }
+
+    private async Task SetSession(string? session)
+    {
+        _settings!.WahaSession = session;
+        await TestWhatsApp();
+    }
+
+    private async Task<OptionsResult> LoadGroups()
+    {
+        try
+        {
+            var groups = await Notifications.ListWhatsAppGroupsAsync(Copy());
+            return groups.Count == 0
+                ? OptionsResult.Fail("La cuenta de WhatsApp no está en ningún grupo. Agrégala al grupo y vuelve a intentarlo.")
+                : OptionsResult.Ok([.. groups.Select(WhatsAppRecipients.Format)]);
+        }
+#pragma warning disable CA1031 // El error se muestra en el diálogo
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            return OptionsResult.Fail(ex.Message);
+        }
+    }
+
+    private void AddGroup(string? group)
+    {
+        if (string.IsNullOrWhiteSpace(group) || _settings!.WhatsAppRecipientList.Contains(group))
+        {
+            return;
+        }
+
+        _settings.WhatsAppRecipients = string.Join('\n', [.. _settings.WhatsAppRecipientList, group]);
+    }
+
+    private async Task SendWhatsAppTest()
+    {
+        _testingWhatsApp = true;
+        _whatsAppTest = null;
+        try
+        {
+            _whatsAppTest = await Notifications.SendWhatsAppTestAsync(Copy());
+        }
+        finally
+        {
+            _testingWhatsApp = false;
+        }
+    }
 
     private string? ErrorFor(string field) => _errors.FirstOrDefault(e => e.Field == field)?.Message;
 
@@ -155,7 +344,7 @@
             if (_errors.Count == 0)
             {
                 Toasts.Success("Alertas guardadas");
-                (_settings, _hasPassword) = await Notifications.GetAsync();
+                (_settings, _hasPassword, _hasWhatsAppKey) = await Notifications.GetAsync();
             }
             else
             {
@@ -197,5 +386,13 @@
         Recipients = _settings.Recipients,
         NotifyOnFailure = _settings.NotifyOnFailure,
         NotifyOnSuccess = _settings.NotifyOnSuccess,
+        WhatsAppEnabled = _settings.WhatsAppEnabled,
+        WhatsAppRecipients = _settings.WhatsAppRecipients,
+        WhatsAppOnFailure = _settings.WhatsAppOnFailure,
+        WhatsAppOnSuccess = _settings.WhatsAppOnSuccess,
+        UsePlatformWhatsApp = _settings.UsePlatformWhatsApp,
+        WahaUrl = _settings.WahaUrl,
+        WahaApiKey = _settings.WahaApiKey,
+        WahaSession = _settings.WahaSession,
     };
 }

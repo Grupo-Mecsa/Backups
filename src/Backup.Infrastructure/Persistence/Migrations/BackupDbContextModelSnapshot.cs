@@ -63,8 +63,38 @@ namespace Backup.Infrastructure.Persistence.Migrations
                     b.Property<bool>("UsePlatformSmtp")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("UsePlatformWhatsApp")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Username")
                         .HasMaxLength(255)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WahaApiKey")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WahaSession")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WahaUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("WhatsAppEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("WhatsAppOnFailure")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("WhatsAppOnSuccess")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("WhatsAppRecipients")
+                        .HasMaxLength(2000)
                         .HasColumnType("TEXT");
 
                     b.HasKey("TenantId");

@@ -65,7 +65,7 @@
 
             @if (_run.Error is not null)
             {
-                <div class="callout callout--@(_run.Status == RunStatus.Warning ? "warning" : "danger") animate-in"><Icon Name="alert" Size="16" /> <span>@_run.Error</span></div>
+                <ErrorSummary Error="@_run.Error" Warning="_run.Status == RunStatus.Warning" />
             }
 
             <Card Index="4">
@@ -187,9 +187,7 @@
                         }
                     </div>
                 </header>
-                <pre class="log">@foreach (var line in _run.Log.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-{<span class="log__line @LineClass(line)">@line</span>
-}</pre>
+                <LogViewer Log="@_run.Log" Live="_run.Status == RunStatus.Running" />
             </Card>
         }
     </ChildContent>
@@ -268,11 +266,6 @@
             _run = await Dashboard.GetRunAsync(Id);
         }
     }
-
-    private static string? LineClass(string line) =>
-        line.Contains(" ERR ", StringComparison.Ordinal) ? "log__line--error"
-        : line.Contains(" WRN ", StringComparison.Ordinal) ? "log__line--warn"
-        : null;
 
     private async Task Cancel()
     {

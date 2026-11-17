@@ -53,7 +53,7 @@
 
                 @if (Registry.FindAny(_draft.Connection.ProviderKey) is { } provider)
                 {
-                    <ProviderSettingsForm Provider="provider" Binding="_binding" ErrorPrefix="Settings" Errors="_errors"
+                    <ProviderSettingsForm Provider="provider" Binding="_binding" ErrorPrefix="Settings" Errors="_errors" ShowHeader="@(!_draft.IsNew)"
                                           FieldFilter="f => f.IsConnection"
                                           HasStoredSecret="key => _draft.HasStoredSecret(key)"
                                           OnTestHandler="() => Connections.TestAsync(_draft.Connection)" />

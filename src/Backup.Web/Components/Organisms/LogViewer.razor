@@ -1,0 +1,179 @@
+@* Bitácora interpretada: resumen de omitidos, filtros por nivel, búsqueda y detalle plegable por entrada. *@
+@inject IJSRuntime JS
+
+@if (_parsed.Omitted.Count > 0)
+{
+    <section class="log-omitted">
+        <header class="log-omitted__header">
+            <Icon Name="alert" Size="16" />
+            <span><strong>@OmittedTotal elemento(s) omitido(s)</strong> · el resto del respaldo se completó</span>
+        </header>
+        @foreach (var group in _parsed.Omitted)
+        {
+            <details class="log-omitted__group" open="@(_parsed.Omitted.Count == 1 && group.Items.Count <= 8)">
+                <summary>
+                    <span class="log-omitted__reason">@group.Reason</span>
+                    <Badge Tone="Tone.Warning">@group.Items.Count</Badge>
+                </summary>
+                @if (group.Hint is not null)
+                {
+                    <p class="log-omitted__hint"><Icon Name="info" Size="13" /> @group.Hint</p>
+                }
+                <ul class="log-omitted__list">
+                    @foreach (var item in group.Items.Take(_showAllOmitted.Contains(group.Reason) ? int.MaxValue : OmittedPreview))
+                    {
+                        <li>
+                            <Icon Name="file" Size="13" />
+                            <span class="log-omitted__name">@item.Name</span>
+                            <span class="log-omitted__folder" title="@item.Folder">@item.Folder</span>
+                            <button type="button" class="log-omitted__goto" title="Ver en la bitácora" @onclick="() => Reveal(item.EntryIndex)">ver</button>
+                        </li>
+                    }
+                </ul>
+                @if (group.Items.Count > OmittedPreview && !_showAllOmitted.Contains(group.Reason))
+                {
+                    <button type="button" class="log-omitted__more" @onclick="() => _showAllOmitted.Add(group.Reason)">
+                        Mostrar los @group.Items.Count
+                    </button>
+                }
+            </details>
+        }
+    </section>
+}
+
+<div class="log-toolbar">
+    <div class="chips chips--compact" role="group" aria-label="Filtrar por nivel">
+        @Chip(null, "Todo", _parsed.Entries.Count)
+        @if (_parsed.Count(LogLevelKind.Error) > 0)
+        {
+            @Chip(LogLevelKind.Error, "Errores", _parsed.Count(LogLevelKind.Error))
+        }
+        @if (_parsed.Count(LogLevelKind.Warning) > 0)
+        {
+            @Chip(LogLevelKind.Warning, "Advertencias", _parsed.Count(LogLevelKind.Warning))
+        }
+        @if (_parsed.Count(LogLevelKind.Omitted) > 0)
+        {
+            @Chip(LogLevelKind.Omitted, "Omitidos", _parsed.Count(LogLevelKind.Omitted))
+        }
+        @Chip(LogLevelKind.Info, "Información", _parsed.Count(LogLevelKind.Info))
+    </div>
+    <div class="log-toolbar__search">
+        <TextInput Icon="search" Placeholder="Buscar en la bitácora..." Immediate @bind-Value="_search" />
+    </div>
+    @if (Live)
+    {
+        <Toggle @bind-Value="_follow" Label="Seguir" />
+    }
+</div>
+
+<div class="log log--structured" @ref="_container">
+    @{ var shown = 0; }
+    @foreach (var entry in Visible)
+    {
+        shown++;
+        <div @key="entry.Index" id="@($"log-{entry.Index}")" class="log-entry log-entry--@Css(entry.Level) @(_revealed == entry.Index ? "is-revealed" : null)">
+            <span class="log-entry__time">@entry.Time</span>
+            <span class="log-entry__level">@Label(entry.Level)</span>
+            <div class="log-entry__body">
+                <span class="log-entry__msg">@entry.Message</span>
+                @if (entry.Details.Count > 0)
+                {
+                    <details class="log-entry__details" open="@(_revealed == entry.Index)">
+                        <summary>@(entry.Level == LogLevelKind.Error ? "Detalle técnico" : "Diagnóstico") · @entry.Details.Count línea(s)</summary>
+                        <pre>@string.Join('\n', entry.Details)</pre>
+                    </details>
+                }
+            </div>
+        </div>
+    }
+    @if (shown == 0)
+    {
+        <p class="log__empty">@(_parsed.Entries.Count == 0 ? (Live ? "Esperando las primeras líneas…" : "La bitácora está vacía.") : "Ninguna entrada coincide con el filtro.")</p>
+    }
+</div>
+
+@code {
+    private const int OmittedPreview = 10;
+
+    [Parameter, EditorRequired] public string? Log { get; set; }
+
+    /// <summary>La ejecución sigue en curso: la bitácora crece y se ofrece seguir el final.</summary>
+    [Parameter] public bool Live { get; set; }
+
+    private ParsedLog _parsed = LogParser.Parse(null);
+    private string? _parsedFrom;
+    private LogLevelKind? _level;
+    private string? _search;
+    private bool _follow = true;
+    private int? _revealed;
+    private bool _scrollToRevealed;
+    private readonly HashSet<string> _showAllOmitted = new(StringComparer.Ordinal);
+    private ElementReference _container;
+
+    private int OmittedTotal => _parsed.Omitted.Sum(g => g.Items.Count);
+
+    private IEnumerable<LogEntry> Visible => _parsed.Entries
+        .Where(e => _level is null || e.Level == _level)
+        .Where(e => string.IsNullOrWhiteSpace(_search) || e.Matches(_search.Trim()));
+
+    protected override void OnParametersSet()
+    {
+        // Volver a interpretar solo si cambió el texto (en vivo llega una versión nueva cada pocos segundos).
+        if (!ReferenceEquals(Log, _parsedFrom) && Log != _parsedFrom)
+        {
+            _parsedFrom = Log;
+            _parsed = LogParser.Parse(Log);
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (_scrollToRevealed && _revealed is { } index)
+            {
+                _scrollToRevealed = false;
+                await JS.InvokeVoidAsync("backupLog.reveal", $"log-{index}");
+            }
+            else if (Live && _follow && _level is null && string.IsNullOrWhiteSpace(_search))
+            {
+                await JS.InvokeVoidAsync("backupLog.follow", _container, firstRender);
+            }
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException or InvalidOperationException)
+        {
+        }
+    }
+
+    private void Reveal(int index)
+    {
+        _level = null;
+        _search = null;
+        _follow = false;
+        _revealed = index;
+        _scrollToRevealed = true;
+    }
+
+    private RenderFragment Chip(LogLevelKind? level, string label, int count) => @<button type="button"
+        class="chip chip--sm log-chip log-chip--@(level is { } l ? Css(l) : "all") @(_level == level ? "is-active" : null)"
+        aria-pressed="@(_level == level)" @onclick="() => _level = level">
+        @label <span class="log-chip__count">@count</span>
+    </button>;
+
+    private static string Css(LogLevelKind level) => level switch
+    {
+        LogLevelKind.Error => "error",
+        LogLevelKind.Warning => "warn",
+        LogLevelKind.Omitted => "omit",
+        _ => "info",
+    };
+
+    private static string Label(LogLevelKind level) => level switch
+    {
+        LogLevelKind.Error => "ERROR",
+        LogLevelKind.Warning => "AVISO",
+        LogLevelKind.Omitted => "OMITIDO",
+        _ => "INFO",
+    };
+}

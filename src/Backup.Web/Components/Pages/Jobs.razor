@@ -5,9 +5,16 @@
 @inject IProviderRegistry Registry
 @inject ToastService Toasts
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 
 <PageTemplate Title="Trabajos" Subtitle="Define qué respaldar, a dónde y cuándo">
     <Actions>
+        <div class="view-switch" role="group" aria-label="Vista">
+            <button type="button" class="view-switch__item @(_view == JobsView.Cards ? "is-active" : null)" aria-pressed="@(_view == JobsView.Cards)"
+                    title="Tarjetas" @onclick="() => SetView(JobsView.Cards)"><Icon Name="grid" Size="16" /><span>Tarjetas</span></button>
+            <button type="button" class="view-switch__item @(_view == JobsView.List ? "is-active" : null)" aria-pressed="@(_view == JobsView.List)"
+                    title="Lista" @onclick="() => SetView(JobsView.List)"><Icon Name="list" Size="16" /><span>Lista</span></button>
+        </div>
         <div class="search">
             <TextInput Icon="search" Placeholder="Buscar trabajos..." Immediate @bind-Value="_search" />
         </div>
@@ -39,6 +46,20 @@
         else if (!Filtered.Any())
         {
             <EmptyState Icon="search" Title="Sin resultados" Text="@($"Ningún trabajo coincide con \"{_search}\".")" />
+        }
+        else if (_view == JobsView.List)
+        {
+            <Card Animate="false" Class="job-table-card">
+                <JobTable Jobs="Filtered"
+                          Source="job => Registry.Find(ProviderRole.Source, job.Source.ProviderKey)?.Descriptor"
+                          Destination="job => Registry.Find(ProviderRole.Destination, job.Destination.ProviderKey)?.Descriptor"
+                          LastRun="job => _lastRuns.GetValueOrDefault(job.Id)"
+                          NextRun="job => Dashboard.GetNextRun(job)"
+                          IsBusy="job => JobService.IsBusy(job.Id)"
+                          CanManage="CurrentUser.CanManage"
+                          OnRun="Run" OnCancel="Cancel" OnDelete="AskDelete" OnDuplicate="Duplicate"
+                          OnToggle="args => Toggle(args.Job, args.Enabled)" />
+            </Card>
         }
         else
         {
@@ -74,6 +95,45 @@
     private string? _search;
     private bool _confirmDelete;
     private BackupJob? _pendingDelete;
+
+    private enum JobsView { Cards, List }
+
+    private const string ViewKey = "backup-jobs-view";
+    private JobsView _view = JobsView.Cards;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+        if (!firstRender)
+        {
+            return;
+        }
+
+        // Preferencia de este navegador; si no se puede leer (modo privado, prerender), se queda en tarjetas.
+        try
+        {
+            if (await JS.InvokeAsync<string?>("localStorage.getItem", ViewKey) == "list")
+            {
+                _view = JobsView.List;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException)
+        {
+        }
+    }
+
+    private async Task SetView(JobsView view)
+    {
+        _view = view;
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", ViewKey, view == JobsView.List ? "list" : "cards");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException)
+        {
+        }
+    }
 
     private IEnumerable<BackupJob> Filtered => string.IsNullOrWhiteSpace(_search)
         ? _jobs ?? []

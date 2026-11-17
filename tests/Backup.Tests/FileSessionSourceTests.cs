@@ -15,6 +15,11 @@ public sealed class FileSessionSourceTests : IDisposable
         "/mnt/array1/Inventario/a.xlsx",
         "/mnt/array1/Inventario/trashbox/b.xlsx",
         "/mnt/array1/Otro/c.xlsx",
+        "/mnt/array1/Temporales/informe.docx",
+        "/mnt/array1/Temporales/~$informe.docx",
+        "/mnt/array1/Temporales/datos.tmp",
+        "/mnt/array1/Temporales/Thumbs.db",
+        "/mnt/array1/Temporales/@eaDir/informe.docx/SYNOFILE_THUMB_M.jpg",
     ];
 
     private readonly string _work = Directory.CreateTempSubdirectory("fss-").FullName;
@@ -36,6 +41,58 @@ public sealed class FileSessionSourceTests : IDisposable
         using var zip = ZipFile.OpenRead(artifact.FilePath);
         var names = zip.Entries.Select(e => e.FullName.Replace('\\', '/')).Where(n => !n.EndsWith('/')).ToList();
         Assert.Equal(["mnt/array1/Inventario/a.xlsx"], names);
+    }
+
+    [Theory]
+    [InlineData(null, new[] { "informe.docx" })]
+    [InlineData("true", new[] { "informe.docx" })]
+    [InlineData("false", new[]
+    {
+        "@eaDir/informe.docx/SYNOFILE_THUMB_M.jpg",
+        "datos.tmp",
+        "informe.docx",
+        "Thumbs.db",
+        "~$informe.docx",
+    })]
+    public async Task SkipTemporary_OmitsTemporaryFilesAndFolders_ByDefault(string? skipTemporary, string[] expected)
+    {
+        var settings = new ProviderSettings(new Dictionary<string, string?>
+        {
+            ["remotePath"] = "/mnt/array1/Temporales",
+            ["skipTemporary"] = skipTemporary,
+        });
+        var source = new FakeSource();
+
+        var artifact = await source.CreateArtifactAsync(new SourceContext(settings, _work, "prueba", NullRunLog.Instance), CancellationToken.None);
+
+        using var zip = ZipFile.OpenRead(artifact.FilePath);
+        var names = zip.Entries.Select(e => e.FullName.Replace('\\', '/')).Where(n => !n.EndsWith('/')).Order(StringComparer.Ordinal).ToList();
+        Assert.Equal(expected.Order(StringComparer.Ordinal), names);
+    }
+
+    [Fact]
+    public async Task Streaming_into_the_packager_leaves_only_the_final_package_on_disk()
+    {
+        var settings = new ProviderSettings(new Dictionary<string, string?> { ["remotePath"] = "/mnt/array1" });
+        var source = new FakeSource();
+        var context = new SourceContext(settings, _work, "prueba", NullRunLog.Instance);
+        var packager = new Backup.Application.Pipeline.ArtifactPackager([new Backup.Infrastructure.Transforms.CompressionTransform()]);
+        var job = new Backup.Domain.Jobs.BackupJob { Name = "prueba", Compression = Backup.Domain.Jobs.CompressionKind.GZip };
+
+        var packaged = await packager.PackageAsync(job, source.StreamExtension, Path.Combine(_work, "prueba.zip.pkg"),
+            output => source.WriteArtifactAsync(context, output, CancellationToken.None), NullRunLog.Instance, CancellationToken.None);
+
+        Assert.Equal(".zip.gz", packaged.Extensions);
+        Assert.Equal(["prueba.zip.pkg"], Directory.GetFiles(_work).Select(Path.GetFileName));
+        Assert.True(packaged.RawSize > 0);
+
+        await using var gzip = new GZipStream(File.OpenRead(packaged.FilePath), CompressionMode.Decompress);
+        using var buffer = new MemoryStream();
+        await gzip.CopyToAsync(buffer);
+        buffer.Position = 0;
+        using var zip = new ZipArchive(buffer, ZipArchiveMode.Read);
+        Assert.Contains("Inventario/a.xlsx", zip.Entries.Select(e => e.FullName));
+        Assert.Equal(packaged.RawSize, buffer.Length);
     }
 
     public void Dispose() => Directory.Delete(_work, recursive: true);

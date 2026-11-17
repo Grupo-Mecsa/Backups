@@ -29,19 +29,24 @@ public sealed class RunLog(ILogger logger, string jobName, TimeProvider timeProv
     public void Omit(string message)
     {
         Interlocked.Increment(ref _omitted);
-        Warn(message);
+        Append("OMI", LogLevel.Warning, message);
     }
 
     /// <summary>Registra el error y, debajo, el detalle técnico (tipo, causas internas y traza) para analizar el fallo.</summary>
     public void Error(Exception exception)
     {
-        Error(exception.Message);
+        Error(ErrorInsights.Describe(exception));
         lock (_gate)
         {
+            // El mensaje ya quedó arriba: aquí solo tipos y trazas, para no repetirlo.
             _buffer.AppendLine("         Detalle técnico:");
-            foreach (var line in exception.ToString().Split('\n'))
+            for (var current = exception; current is not null; current = current.InnerException)
             {
-                _buffer.Append("           ").AppendLine(line.TrimEnd('\r'));
+                _buffer.Append("           ").AppendLine(current == exception ? current.GetType().FullName : $"causado por {current.GetType().FullName}");
+                foreach (var line in (current.StackTrace ?? string.Empty).Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    _buffer.Append("           ").AppendLine(line.TrimEnd('\r'));
+                }
             }
         }
     }

@@ -55,6 +55,12 @@ public sealed class BackupDbContext(DbContextOptions<BackupDbContext> options) :
             settings.Property(s => s.FromAddress).HasMaxLength(255);
             settings.Property(s => s.FromName).HasMaxLength(100);
             settings.Property(s => s.Recipients).HasMaxLength(2000);
+            settings.Ignore(s => s.WhatsAppRecipientList);
+            settings.Property(s => s.WhatsAppRecipients).HasMaxLength(2000);
+            settings.Property(s => s.WhatsAppOnFailure).HasDefaultValue(true);
+            settings.Property(s => s.WahaUrl).HasMaxLength(500);
+            settings.Property(s => s.WahaApiKey).HasMaxLength(2000);
+            settings.Property(s => s.WahaSession).HasMaxLength(100);
         });
 
         modelBuilder.Entity<TelegramSubscription>(subscription =>

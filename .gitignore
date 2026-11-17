@@ -8,3 +8,15 @@ data/
 *.db
 *.db-shm
 *.db-wal
+
+# Secretos locales: nunca al repositorio
+.env
+.env.*
+!.env.example
+keys/
+*.pem
+*.key
+*.pfx
+*.p12
+appsettings.*.local.json
+*.tgz

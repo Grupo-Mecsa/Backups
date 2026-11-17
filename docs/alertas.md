@@ -7,6 +7,7 @@ Se envían cuando una ejecución termina **fallida, cancelada o con advertencias
 | Canal | Quién lo configura | Alcance |
 |---|---|---|
 | 📧 Correo | Administrador del tenant | Destinatarios del tenant |
+| 💬 WhatsApp | Administrador del tenant (el operador conecta WAHA) | Números y grupos del tenant |
 | ✈️ Telegram | Cada usuario | Su chat privado o un grupo |
 | 🪝 Webhook | Operador (variable de entorno) | Todos los tenants |
 
@@ -29,6 +30,27 @@ La contraseña SMTP se guarda cifrada y nunca vuelve al navegador: si dejas el c
 | Gmail / Workspace | `smtp.gmail.com` | 587 | STARTTLS | Requiere una *contraseña de aplicación*. |
 | Zoho | `smtp.zoho.com` | 465 | SSL/TLS | |
 | SendGrid | `smtp.sendgrid.net` | 587 | STARTTLS | Usuario `apikey`, contraseña = API key. |
+
+## 💬 WhatsApp
+
+Se envía a través de [WAHA](https://waha.devlike.pro) (WhatsApp HTTP API), con una sesión de WhatsApp ya vinculada.
+
+**Operador:** define las variables (ver [`deploy/.env.example`](../deploy/.env.example)):
+
+| Variable | Ejemplo | Detalle |
+|---|---|---|
+| `WhatsApp__BaseUrl` | `http://waha:3000` | URL de WAHA accesible desde el contenedor. |
+| `WhatsApp__ApiKey` | — | El `WAHA_API_KEY` de la instancia. Viaja en la cabecera `X-Api-Key` y no aparece en los logs. |
+| `WhatsApp__Session` | `default` | Sesión de WAHA desde la que se envía (debe estar en `WORKING`). |
+
+**Administrador del tenant**, en **Administración → Alertas → WhatsApp**:
+
+1. Revisa el estado de la sesión que se muestra arriba.
+2. Activa WhatsApp y elige cuándo avisar.
+3. Escribe los números con código de país (`+506 7070 7070`), o pulsa **Agregar grupo** para elegir uno de los grupos de la cuenta (se guarda como `Nombre <id@g.us>`).
+4. Pulsa **Enviar mensaje de prueba** y luego **Guardar**.
+
+El mensaje incluye el estado, el trabajo, la duración, el archivo y, si falló, qué pasó y qué hacer.
 
 ## ✈️ Telegram
 

@@ -47,6 +47,30 @@ public sealed class NotificationSettings
     public IReadOnlyList<string> RecipientList =>
         (Recipients ?? string.Empty).Split([',', ';', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
+    /// <summary>Alertas por WhatsApp (vía WAHA).</summary>
+    public bool WhatsAppEnabled { get; set; }
+
+    /// <summary>Envía con la instancia de WAHA de la plataforma (variables <c>WhatsApp__*</c>) en lugar de una propia.</summary>
+    public bool UsePlatformWhatsApp { get; set; }
+
+    /// <summary>URL de la instancia de WAHA (p. ej. http://192.168.1.3:3000).</summary>
+    public string? WahaUrl { get; set; }
+
+    /// <summary>API key de WAHA (<c>WAHA_API_KEY</c>); se guarda cifrada.</summary>
+    public string? WahaApiKey { get; set; }
+
+    /// <summary>Sesión de WAHA desde la que se envía.</summary>
+    public string? WahaSession { get; set; }
+
+    /// <summary>Números (con código de país) o IDs de grupo (<c>…@g.us</c>), separados por coma o por línea.</summary>
+    public string? WhatsAppRecipients { get; set; }
+
+    public bool WhatsAppOnFailure { get; set; } = true;
+    public bool WhatsAppOnSuccess { get; set; }
+
+    public IReadOnlyList<string> WhatsAppRecipientList =>
+        (WhatsAppRecipients ?? string.Empty).Split([',', ';', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
     /// <summary>El tenant tiene un servidor SMTP propio completo.</summary>
     public bool HasOwnSmtp => !string.IsNullOrWhiteSpace(SmtpHost) && !string.IsNullOrWhiteSpace(FromAddress);
 

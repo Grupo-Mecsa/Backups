@@ -323,7 +323,7 @@ public sealed class EndToEndTests : IAsyncLifetime
         });
         Assert.Empty(errors);
 
-        var (settings, hasPassword) = await notifications.GetAsync();
+        var (settings, hasPassword, _) = await notifications.GetAsync();
         Assert.True(hasPassword);
         Assert.Null(settings.Password);
         Assert.Equal(2, settings.RecipientList.Count);
@@ -400,7 +400,7 @@ public sealed class EndToEndTests : IAsyncLifetime
     {
         var notifications = _services.GetRequiredService<Application.Notifications.NotificationService>();
         Assert.Equal("no-reply@plataforma.test", notifications.PlatformSender);
-        var (defaults, _) = await notifications.GetAsync();
+        var (defaults, _, _) = await notifications.GetAsync();
         Assert.True(defaults.UsePlatformSmtp);
 
         var errors = await notifications.SaveAsync(new Domain.Notifications.NotificationSettings

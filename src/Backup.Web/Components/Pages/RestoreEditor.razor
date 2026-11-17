@@ -62,7 +62,7 @@
 
                 @if (Selected is { } provider)
                 {
-                    <ProviderSettingsForm Provider="provider" Binding="_target" ErrorPrefix="Target" Errors="_errors"
+                    <ProviderSettingsForm Provider="provider" Binding="_target" ErrorPrefix="Target" Errors="_errors" ShowHeader="false" OwnSectionTitle="Para esta restauración"
                                           Fields="provider.RestoreFields"
                                           FieldFilter="@(_target.ConnectionId is null ? null : f => !f.IsConnection)"
                                           HasStoredSecret="key => _preset != RestorePreset.Custom && _stored.Contains(key)"

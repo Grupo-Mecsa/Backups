@@ -54,7 +54,24 @@ public interface IRunRepository
     /// <summary>Borra la ejecución y su bitácora de la base (borrado físico). No borra ejecuciones en curso.</summary>
     /// <returns>False si no existía o seguía en curso.</returns>
     Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>Borra (o solo cuenta, con <paramref name="countOnly"/>) las ejecuciones terminadas del tenant que cumplen el filtro.</summary>
+    Task<int> ClearAsync(Guid tenantId, RunCleanup cleanup, DateTimeOffset? before, bool countOnly, CancellationToken cancellationToken = default);
 }
+
+/// <summary>Qué ejecuciones borrar al limpiar el historial.</summary>
+public enum RunCleanupScope
+{
+    /// <summary>Fallidas y canceladas: no tienen respaldo que restaurar.</summary>
+    Unsuccessful,
+
+    /// <summary>Todas las terminadas, incluidas las correctas (se pierde el acceso a restaurar sus respaldos desde la app).</summary>
+    All,
+}
+
+/// <param name="JobId">Null = todos los trabajos.</param>
+/// <param name="OlderThanDays">Null o 0 = sin importar la antigüedad.</param>
+public sealed record RunCleanup(RunCleanupScope Scope, Guid? JobId = null, int? OlderThanDays = null);
 
 /// <param name="TenantId">Null = todos los tenants (procesos de sistema).</param>
 public sealed record RunQuery(Guid? JobId = null, DateTimeOffset? Since = null, int Take = 50, Guid? TenantId = null);

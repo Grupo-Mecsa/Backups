@@ -201,6 +201,24 @@ public sealed class JobService(
         }
     }
 
+    /// <summary>Cuántas ejecuciones borraría <see cref="ClearRunsAsync"/> con ese filtro.</summary>
+    public Task<int> CountRunsToClearAsync(RunCleanup cleanup, CancellationToken cancellationToken = default)
+    {
+        user.EnsureCanManage();
+        return runs.ClearAsync(user.TenantId, cleanup, Before(cleanup), countOnly: true, cancellationToken);
+    }
+
+    /// <summary>Limpia el historial del tenant. Nunca toca ejecuciones en curso ni los respaldos guardados en los destinos.</summary>
+    /// <returns>Ejecuciones borradas.</returns>
+    public Task<int> ClearRunsAsync(RunCleanup cleanup, CancellationToken cancellationToken = default)
+    {
+        user.EnsureCanManage();
+        return runs.ClearAsync(user.TenantId, cleanup, Before(cleanup), countOnly: false, cancellationToken);
+    }
+
+    private DateTimeOffset? Before(RunCleanup cleanup) =>
+        cleanup.OlderThanDays is > 0 and var days ? timeProvider.GetUtcNow().AddDays(-days) : null;
+
     /// <summary>Borra definitivamente una ejecución terminada del historial (el artefacto en el destino no se toca).</summary>
     /// <returns>False si no existe, es de otro tenant o sigue en curso.</returns>
     public async Task<bool> DeleteRunAsync(Guid runId, CancellationToken cancellationToken = default)

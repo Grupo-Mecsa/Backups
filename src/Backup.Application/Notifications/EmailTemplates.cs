@@ -38,6 +38,13 @@ public static class EmailTemplates
 
         if (run.Error is not null)
         {
+            var insight = Runs.ErrorInsights.Explain(run.Error);
+            if (insight.Recognized)
+            {
+                rows.Add(("Qué pasó", insight.Title));
+                rows.Add(("Qué hacer", insight.Hint!));
+            }
+
             rows.Add(("Error", run.Error));
         }
 

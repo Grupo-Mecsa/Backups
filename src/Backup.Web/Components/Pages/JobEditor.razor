@@ -58,7 +58,7 @@
                                             SelectedKeyChanged="key => SelectProvider(ProviderRole.Source, key)" />
                             @if (Registry.Find(ProviderRole.Source, _job.Source.ProviderKey) is { } source)
                             {
-                                <ProviderSettingsForm Provider="source" Binding="_job.Source" ErrorPrefix="Source" Errors="_errors"
+                                <ProviderSettingsForm Provider="source" Binding="_job.Source" ErrorPrefix="Source" Errors="_errors" ShowHeader="false"
                                                       FieldFilter="FieldsFor(_job.Source)"
                                                       HasStoredSecret="key => HasStoredSecret(ProviderRole.Source, key)"
                                                       OnTestHandler="() => Test(ProviderRole.Source)"
@@ -85,7 +85,7 @@
                                             SelectedKeyChanged="key => SelectProvider(ProviderRole.Destination, key)" />
                             @if (Registry.Find(ProviderRole.Destination, _job.Destination.ProviderKey) is { } destination)
                             {
-                                <ProviderSettingsForm Provider="destination" Binding="_job.Destination" ErrorPrefix="Destination" Errors="_errors"
+                                <ProviderSettingsForm Provider="destination" Binding="_job.Destination" ErrorPrefix="Destination" Errors="_errors" ShowHeader="false"
                                                       FieldFilter="FieldsFor(_job.Destination)"
                                                       HasStoredSecret="key => HasStoredSecret(ProviderRole.Destination, key)"
                                                       OnTestHandler="() => Test(ProviderRole.Destination)"
@@ -126,7 +126,7 @@
                                 <ProviderPicker Providers="RestoreTargets" SelectedKey="@restoreTarget.ProviderKey" SelectedKeyChanged="SelectRestoreProvider" />
                                 @if (RestoreTargets.FirstOrDefault(t => string.Equals(t.Descriptor.Key, restoreTarget.ProviderKey, StringComparison.OrdinalIgnoreCase)) is { } restoreProvider)
                                 {
-                                    <ProviderSettingsForm Provider="restoreProvider" Binding="restoreTarget" ErrorPrefix="Restore" Errors="_errors"
+                                    <ProviderSettingsForm Provider="restoreProvider" Binding="restoreTarget" ErrorPrefix="Restore" Errors="_errors" ShowHeader="false" OwnSectionTitle="Para esta restauración"
                                                           Fields="restoreProvider.RestoreFields"
                                                           FieldFilter="@(restoreTarget.ConnectionId is null ? null : f => !f.IsConnection)"
                                                           HasStoredSecret="HasStoredRestoreSecret"

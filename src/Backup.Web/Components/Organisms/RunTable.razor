@@ -41,7 +41,7 @@
                 @if (run.Status is RunStatus.Failed or RunStatus.Warning && !string.IsNullOrEmpty(run.Error))
                 {
                     <tr class="table__error-row" @onclick="() => Open(run)">
-                        <td colspan="@(ShowJob ? 7 : 6)"><Icon Name="alert" Size="13" /> @run.Error</td>
+                        <td colspan="@(ShowJob ? 7 : 6)"><ErrorSummary Error="@run.Error" Warning="run.Status == RunStatus.Warning" Compact /></td>
                     </tr>
                 }
             }

@@ -22,6 +22,18 @@ public interface IBackupSource : IProvider
     string? ArtifactExtension(ProviderSettings settings) => null;
 }
 
+/// <summary>
+/// Capacidad opcional: origen que escribe su artefacto directamente en un stream (el pipeline de compresión, cifrado y
+/// hash), sin archivo intermedio. Evita tener en disco el artefacto y el paquete a la vez.
+/// </summary>
+public interface IStreamingSource
+{
+    /// <summary>Extensión del contenido que escribe (".zip").</summary>
+    string StreamExtension { get; }
+
+    Task WriteArtifactAsync(SourceContext context, Stream output, CancellationToken cancellationToken);
+}
+
 /// <summary>Destino de almacenamiento para los respaldos.</summary>
 public interface IBackupDestination : IProvider
 {

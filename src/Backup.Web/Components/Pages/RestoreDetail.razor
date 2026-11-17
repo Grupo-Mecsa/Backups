@@ -49,7 +49,7 @@
 
             @if (_restore.Error is not null)
             {
-                <div class="callout callout--@(_restore.Status == RunStatus.Warning ? "warning" : "danger") animate-in"><Icon Name="alert" Size="16" /> <span>@_restore.Error</span></div>
+                <ErrorSummary Error="@_restore.Error" Warning="_restore.Status == RunStatus.Warning" />
             }
 
             <Card Index="3">
@@ -72,9 +72,7 @@
                         <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="copy" OnClick="CopyLogAsync">Copiar</Button>
                     </div>
                 </header>
-                <pre class="log">@foreach (var line in _restore.Log.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-{<span class="log__line @LineClass(line)">@line</span>
-}</pre>
+                <LogViewer Log="@_restore.Log" Live="_restore.Status == RunStatus.Running" />
             </Card>
         }
     </ChildContent>
@@ -117,11 +115,6 @@
         {
         }
     }
-
-    private static string? LineClass(string line) =>
-        line.Contains(" ERR ", StringComparison.Ordinal) ? "log__line--error"
-        : line.Contains(" WRN ", StringComparison.Ordinal) ? "log__line--warn"
-        : null;
 
     private async Task CancelAsync()
     {

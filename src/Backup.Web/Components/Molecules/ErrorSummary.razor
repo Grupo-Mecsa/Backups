@@ -1,0 +1,46 @@
+@* Error de una ejecución explicado: causa en una línea, qué hacer y, plegado, el mensaje técnico original. *@
+@{ var insight = ErrorInsights.Explain(Error); }
+
+@if (Compact)
+{
+    <div class="error-summary error-summary--compact error-summary--@Tone" title="@insight.Raw">
+        <Icon Name="@(Warning ? "alert" : "x")" Size="14" />
+        <span class="error-summary__title">@insight.Title</span>
+        @if (insight.Hint is not null)
+        {
+            <span class="error-summary__hint">@insight.Hint</span>
+        }
+    </div>
+}
+else
+{
+    <div class="callout callout--@(Warning ? "warning" : "danger") error-summary animate-in" role="alert">
+        <Icon Name="alert" Size="18" />
+        <div class="error-summary__body">
+            <p class="error-summary__title">@insight.Title</p>
+            @if (insight.Hint is not null)
+            {
+                <p class="error-summary__action"><Icon Name="info" Size="14" /> <span><strong>Qué hacer:</strong> @insight.Hint</span></p>
+            }
+            @if (insight.Recognized || insight.Title != insight.Raw)
+            {
+                <details class="error-summary__raw">
+                    <summary>Mensaje técnico</summary>
+                    <pre>@insight.Raw</pre>
+                </details>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Error { get; set; } = string.Empty;
+
+    /// <summary>Advertencia (completado con omitidos) en lugar de fallo.</summary>
+    [Parameter] public bool Warning { get; set; }
+
+    /// <summary>Una sola línea, para tablas.</summary>
+    [Parameter] public bool Compact { get; set; }
+
+    private string Tone => Warning ? "warning" : "danger";
+}

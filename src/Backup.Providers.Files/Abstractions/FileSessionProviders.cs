@@ -140,7 +140,7 @@ public abstract class FileSessionDestination(IFileSessionFactory factory) : IBac
 }
 
 /// <summary>Origen genérico: descarga recursivamente una carpeta remota y la empaqueta en .zip.</summary>
-public abstract class FileSessionSource(IFileSessionFactory factory) : IBackupSource, IConnectionTester, IFolderBrowser
+public abstract class FileSessionSource(IFileSessionFactory factory) : IBackupSource, IStreamingSource, IConnectionTester, IFolderBrowser
 {
     private static readonly TimeSpan ProgressInterval = TimeSpan.FromSeconds(10);
 
@@ -156,12 +156,32 @@ public abstract class FileSessionSource(IFileSessionFactory factory) : IBackupSo
         SettingField.Text("include", "Incluir por patrón", placeholder: "*.pdf, *.docx", help: "Patrones de nombre separados por coma. Vacío = todo."),
         SettingField.Text("exclude", "Excluir por patrón", placeholder: "*.tmp, ~*"),
         SettingField.Toggle("recursive", "Incluir subcarpetas", true),
+        SettingField.Toggle("skipTemporary", "Omitir archivos temporales", true,
+            "Bloqueos de Office (~$*), *.tmp, descargas a medias, Thumbs.db, .DS_Store y similares."),
+    ];
+
+    /// <summary>
+    /// Archivos y carpetas que crean el sistema o los programas mientras trabajan y no vale la pena respaldar:
+    /// bloqueos de Office/LibreOffice, temporales, descargas incompletas, swap de editores y metadatos de Windows/macOS/NAS.
+    /// </summary>
+    public static readonly IReadOnlyList<string> TemporaryPatterns =
+    [
+        "~$*", "~*.tmp", "*.tmp", "*.temp", ".~lock.*#",
+        "*.part", "*.partial", "*.crdownload", "*.download",
+        "*.swp", "*.swo",
+        "Thumbs.db", "ehthumbs.db", ".DS_Store", "._*",
+        ".AppleDouble", ".TemporaryItems", "@eaDir",
     ];
 
     /// <summary>Combina la selección del explorador con los patrones de nombre.</summary>
     public static (PathSelection Selection, Func<string, bool> Include, Func<string, bool> Exclude, bool Recursive) Filters(ProviderSettings settings)
     {
-        var excludePatterns = settings.GetList("exclude");
+        var excludePatterns = settings.GetList("exclude").ToList();
+        if (settings.GetBool("skipTemporary", true))
+        {
+            excludePatterns.AddRange(TemporaryPatterns);
+        }
+
         return (
             PathSelection.Parse(settings.GetRaw("selection")),
             ProviderHelpers.GlobFilter(settings.GetList("include")),
@@ -169,19 +189,43 @@ public abstract class FileSessionSource(IFileSessionFactory factory) : IBackupSo
             settings.GetBool("recursive", true));
     }
 
+    public string StreamExtension => ".zip";
+
+    /// <summary>Genera el .zip como archivo (para quien no use <see cref="WriteArtifactAsync"/>).</summary>
     public async Task<BackupArtifact> CreateArtifactAsync(SourceContext context, CancellationToken cancellationToken)
+    {
+        var zipPath = Path.Combine(context.WorkingDirectory, context.BaseName + ".zip");
+        await using (var file = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true))
+        {
+            await WriteArtifactAsync(context, file, cancellationToken);
+        }
+
+        return new BackupArtifact(zipPath, ".zip");
+    }
+
+    /// <summary>
+    /// Escribe el .zip directamente en <paramref name="output"/> (el pipeline de compresión, cifrado y hash): cada archivo
+    /// se descarga a un temporal, se agrega al zip y se borra. Así el disco solo necesita el paquete final y el archivo en
+    /// curso, en lugar de la carpeta descargada, el .zip y el paquete a la vez.
+    /// </summary>
+    public async Task WriteArtifactAsync(SourceContext context, Stream output, CancellationToken cancellationToken)
     {
         var settings = context.Settings;
         var root = factory.RootPath(settings);
         var (selection, include, exclude, recursive) = Filters(settings);
-        var staging = Directory.CreateDirectory(Path.Combine(context.WorkingDirectory, "files")).FullName;
+
+        // Raíz virtual: solo sirve para validar que ninguna ruta del zip se salga de la carpeta de origen.
+        var staging = Path.GetFullPath(Path.Combine(context.WorkingDirectory, "files"));
+        var temp = Path.Combine(context.WorkingDirectory, "descarga.tmp");
+        var added = new HashSet<string>(StringComparer.Ordinal);
+        using var zip = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true);
 
         await using var session = await factory.OpenAsync(settings, cancellationToken);
 
         // Sin carpeta configurada se parte de la carpeta inicial del usuario, en ruta absoluta: el explorador del
         // asistente también muestra rutas absolutas, y la selección (incluir/excluir) se guarda relativa a ellas.
         var start = root.Length > 0 || session.HomeDirectory == "/" ? root : session.HomeDirectory;
-        context.Log.Info($"Carpeta de origen: {(start.Length == 0 ? "/" : start)}{(recursive ? " (con subcarpetas)" : string.Empty)}.");
+        context.Log.Info($"Carpeta de origen: {(start.Length == 0 ? "/" : start)}{(recursive ? " (con subcarpetas)" : string.Empty)}{(settings.GetBool("skipTemporary", true) ? ", sin archivos temporales" : string.Empty)}.");
         if (!selection.IsEmpty)
         {
             context.Log.Info($"Selección: {string.Join(", ", selection.Included.Select(p => "+" + (p.Length == 0 ? "/" : p)).Concat(selection.Excluded.Select(p => "-" + (p.Length == 0 ? "/" : p))))}");
@@ -254,15 +298,20 @@ public abstract class FileSessionSource(IFileSessionFactory factory) : IBackupSo
                     context.Log.Warn($"Nombre con '..' copiado tal cual (revisar): {entry.Path}");
                 }
 
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                var entryName = Path.GetRelativePath(staging, target).Replace('\\', '/');
+                if (!added.Add(entryName))
+                {
+                    continue; // el servidor lo listó dos veces
+                }
+
                 try
                 {
-                    await session.DownloadAsync(entry.Path, target, cancellationToken);
+                    await session.DownloadAsync(entry.Path, temp, cancellationToken);
                 }
                 catch (Exception ex) when (ex is FileNotFoundException or UnauthorizedAccessException)
                 {
                     // Un archivo que desapareció o no se puede leer no debe tumbar todo el respaldo.
-                    File.Delete(target);
+                    File.Delete(temp);
                     context.Log.Omit($"Omitido {entry.Path}: {ex.Message}");
                     continue;
                 }
@@ -272,6 +321,19 @@ public abstract class FileSessionSource(IFileSessionFactory factory) : IBackupSo
                     throw;
                 }
 
+                var zipEntry = zip.CreateEntry(entryName, AlreadyCompressed(entry.Name) ? CompressionLevel.NoCompression : CompressionLevel.Optimal);
+                if (entry.Modified is { } modified && modified.Year is >= 1980 and <= 2107)
+                {
+                    zipEntry.LastWriteTime = modified;
+                }
+
+                await using (var input = new FileStream(temp, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, useAsync: true))
+                await using (var entryStream = zipEntry.Open())
+                {
+                    await input.CopyToAsync(entryStream, cancellationToken);
+                }
+
+                File.Delete(temp);
                 count++;
                 bytes += entry.Size ?? 0;
                 foreach (var note in session.DrainNotes())
@@ -284,8 +346,18 @@ public abstract class FileSessionSource(IFileSessionFactory factory) : IBackupSo
         }
 
         context.Log.Info($"{count} archivos descargados ({Application.ByteSize.Format(bytes)}).");
-        return await ProviderHelpers.ZipDirectoryAsync(staging, context, cancellationToken);
     }
+
+    /// <summary>Formatos que ya vienen comprimidos: volver a comprimirlos gasta CPU sin ahorrar espacio.</summary>
+    private static readonly HashSet<string> CompressedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".zip", ".7z", ".rar", ".gz", ".bz2", ".xz", ".zst",
+        ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic",
+        ".mp4", ".mov", ".avi", ".mkv", ".mp3", ".m4a", ".aac", ".ogg",
+        ".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp",
+    };
+
+    private static bool AlreadyCompressed(string name) => CompressedExtensions.Contains(Path.GetExtension(name));
 
     public Task<string> TestConnectionAsync(ProviderSettings settings, CancellationToken cancellationToken) =>
         TestAsync(factory, settings, cancellationToken);

@@ -3,4 +3,7 @@
 **/.vs
 **/TestResults
 data
+.env
+.env.*
+keys
 .git

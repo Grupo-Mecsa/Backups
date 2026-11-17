@@ -87,6 +87,28 @@ public sealed class RunRepository(IDbContextFactory<BackupDbContext> contextFact
         return await db.Runs.Where(r => r.StartedAt < before && r.Status != RunStatus.Running).ExecuteDeleteAsync(cancellationToken);
     }
 
+    public async Task<int> ClearAsync(Guid tenantId, RunCleanup cleanup, DateTimeOffset? before, bool countOnly, CancellationToken cancellationToken = default)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var query = db.Runs.Where(r => r.TenantId == tenantId && r.Status != RunStatus.Running);
+        if (cleanup.Scope == RunCleanupScope.Unsuccessful)
+        {
+            query = query.Where(r => r.Status == RunStatus.Failed || r.Status == RunStatus.Cancelled);
+        }
+
+        if (cleanup.JobId is { } jobId)
+        {
+            query = query.Where(r => r.JobId == jobId);
+        }
+
+        if (before is { } limit)
+        {
+            query = query.Where(r => r.StartedAt < limit);
+        }
+
+        return countOnly ? await query.CountAsync(cancellationToken) : await query.ExecuteDeleteAsync(cancellationToken);
+    }
+
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);

@@ -61,6 +61,12 @@ internal sealed class FtpSessionFactory : IFileSessionFactory
 
         client.Config.ConnectTimeout = 15_000;
         client.Config.DataConnectionType = FtpDataConnectionType.AutoPassive;
+        // Mientras baja un archivo grande la conexión de control queda callada; NAS y firewalls la cortan por
+        // inactividad y el "226" final nunca llega (TimeoutException al terminar la transferencia). NOOP periódico
+        // y keepalive TCP la mantienen viva.
+        client.Config.Noop = true;
+        client.Config.NoopInterval = 60_000;
+        client.Config.SocketKeepAlive = true;
         // El detector de traversal busca ".." como subcadena y rechaza nombres legítimos como "..docx".
         // Las rutas salen del listado del propio servidor; el origen avisa en la bitácora de estos nombres
         // y la copia local ya valida que no salga de la carpeta de trabajo.
@@ -68,16 +74,20 @@ internal sealed class FtpSessionFactory : IFileSessionFactory
 
         try
         {
-            await client.Connect(cancellationToken);
-            if (nameEncoding == "UTF-8")
+            async Task ConnectAsync(CancellationToken token)
             {
-                // Fijar Encoding a mano desactiva el "OPTS UTF8 ON" que FluentFTP manda en modo automático, y hay
-                // servidores que traducen el listado a UTF-8 pero no las rutas de RETR/CWD si no se activa.
-                await client.Execute("OPTS UTF8 ON", cancellationToken);
+                await client.Connect(token);
+                if (nameEncoding == "UTF-8")
+                {
+                    // Fijar Encoding a mano desactiva el "OPTS UTF8 ON" que FluentFTP manda en modo automático, y hay
+                    // servidores que traducen el listado a UTF-8 pero no las rutas de RETR/CWD si no se activa.
+                    await client.Execute("OPTS UTF8 ON", token);
+                }
             }
 
+            await ConnectAsync(cancellationToken);
             var home = await client.GetWorkingDirectory(cancellationToken);
-            return new FtpSession(client, string.IsNullOrWhiteSpace(home) ? "/" : home, raw, preferLatin1: nameEncoding == "Latin-1");
+            return new FtpSession(client, ConnectAsync, string.IsNullOrWhiteSpace(home) ? "/" : home, raw, preferLatin1: nameEncoding == "Latin-1");
         }
         catch
         {
@@ -152,7 +162,11 @@ internal sealed class FtpSessionFactory : IFileSessionFactory
     /// </summary>
     private sealed class FtpSession : IFileSession
     {
+        /// <summary>Intentos por archivo cuando la conexión se cae a mitad de la descarga.</summary>
+        private const int DownloadAttempts = 3;
+
         private readonly AsyncFtpClient _client;
+        private readonly Func<CancellationToken, Task> _connect;
         private readonly string _home;
         private readonly bool _raw;
         private readonly bool _preferLatin1;
@@ -164,10 +178,12 @@ internal sealed class FtpSessionFactory : IFileSessionFactory
         /// <summary>Ruta legible absoluta → ruta con los bytes del servidor.</summary>
         private readonly Dictionary<string, string> _rawPaths = new(StringComparer.Ordinal);
 
+        /// <param name="connect">Conecta (o reconecta) el cliente y prepara la sesión (OPTS UTF8).</param>
         /// <param name="home">Carpeta inicial del usuario; las rutas relativas se resuelven desde ella.</param>
-        public FtpSession(AsyncFtpClient client, string home, bool raw, bool preferLatin1)
+        public FtpSession(AsyncFtpClient client, Func<CancellationToken, Task> connect, string home, bool raw, bool preferLatin1)
         {
             _client = client;
+            _connect = connect;
             _raw = raw;
             _preferLatin1 = preferLatin1;
             _home = DisplayName(home);
@@ -264,13 +280,82 @@ internal sealed class FtpSessionFactory : IFileSessionFactory
         private Task<bool> ExistsAsync(string raw, CancellationToken cancellationToken) =>
             TryModesAsync(raw, () => _client.DirectoryExists(raw, cancellationToken));
 
+        /// <summary>
+        /// Descarga con reintentos: si la conexión se cae o se agota el tiempo a mitad de un archivo, se reconecta y
+        /// se vuelve a pedir desde cero en vez de tumbar todo el respaldo. "No existe" no se reintenta.
+        /// </summary>
         private async Task DownloadExactAsync(string raw, string localFile, CancellationToken cancellationToken)
         {
-            var status = await _client.DownloadFile(localFile, raw, FtpLocalExists.Overwrite, token: cancellationToken);
-            if (status == FtpStatus.Failed)
+            for (var attempt = 1; ; attempt++)
             {
-                throw new IOException($"No se pudo descargar {DisplayName(raw)}.");
+                try
+                {
+                    var status = await _client.DownloadFile(localFile, raw, FtpLocalExists.Overwrite, token: cancellationToken);
+                    if (status == FtpStatus.Failed)
+                    {
+                        throw new IOException($"No se pudo descargar {DisplayName(raw)}.");
+                    }
+
+                    return;
+                }
+                catch (Exception ex) when (attempt < DownloadAttempts && IsTransient(ex) && !cancellationToken.IsCancellationRequested)
+                {
+                    _notes.Enqueue($"Se cortó la descarga de {DisplayName(raw)} ({Inner(ex).Message}); reconectando, intento {attempt + 1} de {DownloadAttempts}.");
+                    await ReconnectAsync(attempt, cancellationToken);
+                    if (await AlreadyCompleteAsync(raw, localFile, cancellationToken))
+                    {
+                        // Lo típico: los datos llegaron completos y solo se perdió el "226" por la conexión de control.
+                        _notes.Enqueue($"{DisplayName(raw)} ya estaba completo (mismo tamaño que en el servidor); no se vuelve a bajar.");
+                        return;
+                    }
+                }
             }
+        }
+
+        /// <summary>Cortes de red y tiempos agotados; no los rechazos definitivos del servidor (respuestas 5xx).</summary>
+        private static bool IsTransient(Exception ex) =>
+            ex is not FtpMissingObjectException and not OperationCanceledException
+            && Inner(ex) switch
+            {
+                FtpCommandException command => !command.CompletionCode.StartsWith('5'),
+                FtpMissingObjectException => false,
+                TimeoutException or IOException or System.Net.Sockets.SocketException or FtpException => true,
+                _ => false,
+            };
+
+        private static Exception Inner(Exception ex) => ex is FtpException { InnerException: { } inner } ? inner : ex;
+
+        private async Task<bool> AlreadyCompleteAsync(string raw, string localFile, CancellationToken cancellationToken)
+        {
+            var local = new FileInfo(localFile);
+            if (!local.Exists || local.Length == 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                return await _client.GetFileSize(raw, -1, cancellationToken) == local.Length;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                return false;
+            }
+        }
+
+        private async Task ReconnectAsync(int attempt, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await _client.Disconnect(cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // La conexión ya estaba rota; Connect la rehace.
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(5 * attempt), cancellationToken);
+            await _connect(cancellationToken);
         }
 
         /// <summary>
