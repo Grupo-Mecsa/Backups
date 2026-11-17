@@ -28,6 +28,18 @@ public sealed class ProviderSettings
     public bool GetBool(string key, bool fallback = false) =>
         bool.TryParse(Get(key), out var value) ? value : fallback;
 
+    /// <summary>Copia con algunos valores reemplazados (null = quitar el valor).</summary>
+    public ProviderSettings With(params (string Key, string? Value)[] overrides)
+    {
+        var values = new Dictionary<string, string?>(_values, StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in overrides)
+        {
+            values[key] = value;
+        }
+
+        return new ProviderSettings(values);
+    }
+
     /// <summary>Lista separada por comas, punto y coma o saltos de línea.</summary>
     public IReadOnlyList<string> GetList(string key) =>
         Get(key)?.Split([',', ';', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];

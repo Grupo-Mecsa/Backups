@@ -3,9 +3,14 @@ using Backup.Application.Providers;
 namespace Backup.Providers.Cloud.S3;
 
 /// <summary>Descarga los objetos bajo un prefijo y los empaqueta en un .zip.</summary>
-public sealed class S3Source : IBackupSource, IConnectionTester, IFolderBrowser
+/// <param name="variant">Servicio compatible concreto (R2, B2...); null = S3 genérico.</param>
+public sealed class S3Source(ProviderVariant? variant = null) : IBackupSource, IConnectionTester, IFolderBrowser
 {
-    public ProviderDescriptor Descriptor { get; } = new(
+    public ProviderDescriptor Descriptor { get; } = variant is null
+        ? BaseDescriptor
+        : variant.Apply(BaseDescriptor, $"Respalda el contenido de un bucket de {variant.DisplayName} en un .zip.");
+
+    private static readonly ProviderDescriptor BaseDescriptor = new(
         "s3",
         "Amazon S3 / compatible",
         "Respalda el contenido de un bucket o prefijo S3 en un .zip.",
@@ -21,7 +26,7 @@ public sealed class S3Source : IBackupSource, IConnectionTester, IFolderBrowser
 
     public async Task<BackupArtifact> CreateArtifactAsync(SourceContext context, CancellationToken cancellationToken)
     {
-        var settings = context.Settings;
+        var settings = Settings(context.Settings);
         var bucket = settings.Require("bucket");
         var root = settings.Get("prefix");
         var prefix = string.IsNullOrEmpty(root) ? string.Empty : root.TrimEnd('/') + "/";
@@ -56,8 +61,10 @@ public sealed class S3Source : IBackupSource, IConnectionTester, IFolderBrowser
     }
 
     public Task<FolderListing> BrowseAsync(ProviderSettings settings, string? path, CancellationToken cancellationToken) =>
-        S3Connection.BrowseAsync(settings, path, cancellationToken);
+        S3Connection.BrowseAsync(Settings(settings), path, cancellationToken);
 
     public Task<string> TestConnectionAsync(ProviderSettings settings, CancellationToken cancellationToken) =>
-        S3Connection.TestAsync(settings, cancellationToken);
+        S3Connection.TestAsync(Settings(settings), cancellationToken);
+
+    private ProviderSettings Settings(ProviderSettings settings) => variant?.Apply(settings) ?? settings;
 }

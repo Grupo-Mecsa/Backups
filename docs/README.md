@@ -13,6 +13,7 @@
 | [🔑 Conexiones](conexiones.md) | Datos de acceso reutilizables entre trabajos. |
 | [🗄️ Bases de datos](bases-de-datos.md) | Elegir bases y esquemas, usuario de solo lectura, RLS y servicios gestionados. |
 | [📁 Proveedores de archivos](proveedores-archivos.md) | Carpeta local, FTP/FTPS, SFTP y SMB: rutas, selección, codificación de nombres y problemas frecuentes. |
+| [☁️ Nube y unidades en la nube](nube.md) | Servicios S3 compatibles, Azure Files, Google Drive, OneDrive/SharePoint, Dropbox y WebDAV: credenciales y tokens. |
 | [♻️ Revisar y restaurar](restaurar.md) | Descargar, ver el contenido, restaurar desde la web o a mano. |
 | [🔔 Alertas](alertas.md) | Correo, Telegram y webhook. |
 | [👥 Usuarios, roles y tenants](usuarios-y-tenants.md) | Roles, registro, usuarios, tenants y recuperación de contraseña. |

@@ -38,6 +38,8 @@ builder.Services.AddScoped<ICurrentUser>(sp => sp.GetRequiredService<CurrentUser
 builder.Services.AddScoped<IAccountLinks, AccountLinks>();
 
 builder.Services.AddScoped<ToastService>();
+builder.Services.AddHttpClient("oauth", client => client.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddSingleton<OAuthFlows>();
 builder.Services.AddHealthChecks();
 
 builder.Services.AddRazorComponents()
@@ -62,6 +64,7 @@ app.MapStaticAssets();
 app.MapHealthChecks("/health");
 app.MapAccountEndpoints();
 app.MapRunEndpoints();
+app.MapOAuthEndpoints();
 // Sin la compresión la app no puede mostrarse dentro de iframes de otros sitios (antes lo ponía Blazor).
 app.Use((context, next) =>
 {

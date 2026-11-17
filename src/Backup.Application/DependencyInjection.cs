@@ -31,6 +31,7 @@ public static class DependencyInjection
         services.AddSingleton<Telegram.TelegramLinkCodes>();
         services.AddSingleton<Telegram.TelegramBotCommands>();
         services.AddSingleton<IRunNotifier, Telegram.TelegramRunNotifier>();
+        services.AddSingleton<IRunNotifier, WhatsApp.WhatsAppRunNotifier>();
         services.AddScoped<Telegram.TelegramService>();
         return services;
     }
@@ -39,6 +40,20 @@ public static class DependencyInjection
         where TSource : class, IBackupSource
     {
         services.AddSingleton<IBackupSource, TSource>();
+        return services;
+    }
+
+    /// <summary>Registra un origen construido a mano (p. ej. una variante de un proveedor genérico).</summary>
+    public static IServiceCollection AddBackupSource(this IServiceCollection services, Func<IServiceProvider, IBackupSource> factory)
+    {
+        services.AddSingleton(factory);
+        return services;
+    }
+
+    /// <summary>Registra un destino construido a mano (p. ej. una variante de un proveedor genérico).</summary>
+    public static IServiceCollection AddBackupDestination(this IServiceCollection services, Func<IServiceProvider, IBackupDestination> factory)
+    {
+        services.AddSingleton(factory);
         return services;
     }
 

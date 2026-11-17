@@ -4,9 +4,13 @@ using Backup.Application.Providers;
 namespace Backup.Providers.Databases;
 
 /// <summary>Respaldo de MySQL / MariaDB con mysqldump (o mariadb-dump).</summary>
-public sealed class MySqlSource(IProcessRunner processes) : IBackupSource, IConnectionTester, IOptionLister, IRestoreTarget
+/// <param name="variant">Servicio MySQL concreto (Azure Database for MySQL...); null = MySQL / MariaDB genérico.</param>
+public sealed class MySqlSource(IProcessRunner processes, ProviderVariant? variant = null)
+    : IBackupSource, IConnectionTester, IOptionLister, IRestoreTarget
 {
-    public ProviderDescriptor Descriptor { get; } = new(
+    public ProviderDescriptor Descriptor { get; } = variant is null ? BaseDescriptor : variant.Apply(BaseDescriptor);
+
+    private static readonly ProviderDescriptor BaseDescriptor = new(
         "mysql",
         "MySQL / MariaDB",
         "Dump SQL con mysqldump, consistente con --single-transaction.",

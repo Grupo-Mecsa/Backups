@@ -9,6 +9,7 @@ Cada trabajo de base de datos respalda **una base** (en MySQL, una o varias) con
 | PostgreSQL | `pg_dump` | `.dump` (custom), `.sql` (plain) o `.tar` | ✅ |
 | MySQL / MariaDB | `mysqldump` | `.sql` | ✅ |
 | SQL Server | `BACKUP DATABASE` | `.bak` | — |
+| Azure SQL Database (o SQL Server) | `sqlpackage /Action:Export` | `.bacpac` | ✅ |
 | MongoDB | `mongodump` | `.archive` | — |
 | SQLite | API de respaldo en línea (copia consistente) | `.db` | — |
 
@@ -82,9 +83,35 @@ Si una tabla tiene RLS, `pg_dump` se niega a copiarla con un usuario que no pued
 > [!CAUTION]
 > Un usuario con `BYPASSRLS` puede leer **todas** las filas, incluidas las sensibles (credenciales, datos personales). Por eso debe ser una cuenta dedicada que no use ninguna persona ni aplicación, y los respaldos deben ir **cifrados**.
 
+## Servicios gestionados
+
+Al crear un trabajo o una conexión hay tipos propios para los servicios más usados. Usan la misma herramienta que su motor, pero traen los valores por defecto y las ayudas de cada servicio:
+
+| Tipo | Motor | Valores por defecto y notas |
+|---|---|---|
+| **Supabase** | PostgreSQL | Host del *Session pooler* (`aws-0-<región>.pooler.supabase.com`, puerto 5432), usuario `postgres.<ref>`, SSL `require`, esquema `public`. |
+| **Neon** | PostgreSQL | SSL `require`, base `neondb`. Usa el host **sin** `-pooler`. |
+| **Azure Database for PostgreSQL** | PostgreSQL | SSL `require`. Permite la IP del servidor de respaldos en *Redes*. |
+| **Azure Database for MySQL** | MySQL | Igual que MySQL; Azure exige TLS. |
+| **MongoDB Atlas** | MongoDB | URI `mongodb+srv://…`. Permite la IP en *Network Access*. |
+| **Azure SQL Database** | SQL Server | `.bacpac` con SqlPackage (ver abajo). |
+
+Un trabajo guardado con el tipo genérico (p. ej. PostgreSQL apuntando a Supabase) sigue funcionando igual; no hace falta cambiarlo.
+
+### Azure SQL Database
+
+Azure SQL no admite `BACKUP DATABASE … TO DISK`, así que se exporta a **`.bacpac`** (esquema y datos) con [SqlPackage](https://learn.microsoft.com/sql/tools/sqlpackage/sqlpackage), que trae la imagen Docker (solo x64; se omite con `--build-arg INSTALL_SQLPACKAGE=false`). Sirve también para un SQL Server propio cuando no hay carpeta compartida con el servidor.
+
+| Tema | Qué revisar |
+|---|---|
+| **Firewall** | Permite la IP del servidor de respaldos en el servidor lógico (*Redes*). |
+| **Autenticación** | `SqlPassword` (usuario de SQL) o Microsoft Entra ID: `ActiveDirectoryServicePrincipal` (usuario = Client ID, contraseña = secreto), `ActiveDirectoryManagedIdentity` o `ActiveDirectoryDefault`. |
+| **Consistencia** | El `.bacpac` no es transaccional: si la base recibe escrituras durante la exportación puede quedar inconsistente. Para producción con mucha escritura, exporta una copia (`CREATE DATABASE copia AS COPY OF …`). |
+| **Restaurar** | SqlPackage solo importa en una base **nueva o vacía**: elige un nombre nuevo o activa *Borrar la base si existe*. En Azure puedes indicar edición y objetivo de servicio (`GP_S_Gen5_2`, `S0`…). |
+
 ## PostgreSQL gestionado en la nube
 
-Los servicios gestionados (RDS, Azure Database, Cloud SQL y otros) funcionan igual, con algunos cuidados:
+Los servicios gestionados (Supabase, Neon, RDS, Azure Database, Cloud SQL y otros) funcionan igual, con algunos cuidados:
 
 | Tema | Qué revisar |
 |---|---|

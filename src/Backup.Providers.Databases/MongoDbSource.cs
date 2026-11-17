@@ -4,9 +4,12 @@ using Backup.Application.Providers;
 namespace Backup.Providers.Databases;
 
 /// <summary>Respaldo de MongoDB con mongodump en formato archive.</summary>
-public sealed class MongoDbSource(IProcessRunner processes) : IBackupSource
+/// <param name="variant">Servicio MongoDB concreto (Atlas...); null = MongoDB genérico.</param>
+public sealed class MongoDbSource(IProcessRunner processes, ProviderVariant? variant = null) : IBackupSource
 {
-    public ProviderDescriptor Descriptor { get; } = new(
+    public ProviderDescriptor Descriptor { get; } = variant is null ? BaseDescriptor : variant.Apply(BaseDescriptor);
+
+    private static readonly ProviderDescriptor BaseDescriptor = new(
         "mongodb",
         "MongoDB",
         "Archivo único con mongodump --archive (restaurable con mongorestore).",

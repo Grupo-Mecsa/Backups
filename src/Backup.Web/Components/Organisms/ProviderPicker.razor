@@ -1,29 +1,79 @@
-<div class="provider-picker">
-    @{ var index = 0; }
-    @foreach (var group in Providers.GroupBy(p => p.Descriptor.Category))
-    {
-        <div class="provider-picker__group">
-            <h4 class="provider-picker__heading">@Display.Category(group.Key)</h4>
-            <div class="provider-picker__grid">
-                @foreach (var provider in group)
-                {
-                    <ProviderTile Descriptor="provider.Descriptor" Index="index++"
-                                  Selected="@string.Equals(provider.Descriptor.Key, SelectedKey, StringComparison.OrdinalIgnoreCase)"
-                                  OnSelect="Select" />
-                }
+@* Con un proveedor elegido se reduce a una barra (icono, nombre, «Cambiar») para que el formulario quede a la vista. *@
+@if (Current is { } current && !_expanded)
+{
+    <div class="provider-picker__selected animate-in">
+        <span class="provider-tile__icon"><Icon Name="@current.Descriptor.Icon" Size="22" /></span>
+        <span class="provider-tile__text">
+            <span class="provider-tile__name">@current.Descriptor.DisplayName</span>
+            <span class="provider-tile__desc">@current.Descriptor.Description</span>
+        </span>
+        @if (Providers.Count() > 1)
+        {
+            <Button Variant="ButtonVariant.Secondary" Icon="refresh" OnClick="() => _expanded = true" Class="provider-picker__change">Cambiar</Button>
+        }
+    </div>
+}
+else
+{
+    <div class="provider-picker">
+        @if (Providers.Count() > SearchThreshold)
+        {
+            <div class="provider-picker__search">
+                <TextInput Icon="search" Placeholder="Buscar (Supabase, Drive, R2, Azure...)" Immediate @bind-Value="_filter" />
             </div>
-        </div>
-    }
-</div>
+        }
+        @{ var index = 0; var visible = Visible.ToList(); }
+        @if (visible.Count == 0)
+        {
+            <p class="provider-picker__empty">Ningún tipo coincide con «@_filter».</p>
+        }
+        @foreach (var group in visible.GroupBy(p => p.Descriptor.Category))
+        {
+            <div class="provider-picker__group">
+                <h4 class="provider-picker__heading">@Display.Category(group.Key)</h4>
+                <div class="provider-picker__grid">
+                    @foreach (var provider in group)
+                    {
+                        <ProviderTile Descriptor="provider.Descriptor" Index="index++"
+                                      Selected="@string.Equals(provider.Descriptor.Key, SelectedKey, StringComparison.OrdinalIgnoreCase)"
+                                      OnSelect="Select" />
+                    }
+                </div>
+            </div>
+        }
+        @if (Current is not null)
+        {
+            <div><Button Variant="ButtonVariant.Ghost" OnClick="() => _expanded = false">Mantener @Current.Descriptor.DisplayName</Button></div>
+        }
+    </div>
+}
 
 @code {
     [Parameter, EditorRequired] public IEnumerable<IProvider> Providers { get; set; } = [];
     [Parameter] public string? SelectedKey { get; set; }
     [Parameter] public EventCallback<string> SelectedKeyChanged { get; set; }
 
+    private const int SearchThreshold = 8;
+
+    private bool _expanded;
+    private string? _filter;
+
+    /// <summary>Filtra por nombre, descripción o categoría (sin distinguir mayúsculas ni tildes).</summary>
+    private IEnumerable<IProvider> Visible => string.IsNullOrWhiteSpace(_filter)
+        ? Providers
+        : Providers.Where(p => Matches(p.Descriptor.DisplayName) || Matches(p.Descriptor.Description)
+                               || Matches(Display.Category(p.Descriptor.Category)) || Matches(p.Descriptor.Key));
+
+    private bool Matches(string text) =>
+        System.Globalization.CultureInfo.InvariantCulture.CompareInfo.IndexOf(
+            text, _filter!.Trim(), System.Globalization.CompareOptions.IgnoreCase | System.Globalization.CompareOptions.IgnoreNonSpace) >= 0;
+
+    private IProvider? Current => Providers.FirstOrDefault(p => string.Equals(p.Descriptor.Key, SelectedKey, StringComparison.OrdinalIgnoreCase));
+
     private Task Select(string key)
     {
         SelectedKey = key;
+        _expanded = false;
         return SelectedKeyChanged.InvokeAsync(key);
     }
 }

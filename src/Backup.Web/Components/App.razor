@@ -42,6 +42,32 @@
                 return ok;
             }
         };
+        // Autorización OAuth en una ventana emergente; false si el navegador la bloqueó.
+        window.backupOAuth = {
+            open: function (url) {
+                var w = 520, h = 680;
+                var left = window.screenX + Math.max(0, (window.outerWidth - w) / 2);
+                var top = window.screenY + Math.max(0, (window.outerHeight - h) / 2);
+                var popup = window.open(url, 'backup-oauth', 'popup,width=' + w + ',height=' + h + ',left=' + left + ',top=' + top);
+                if (popup) { try { popup.focus(); } catch (e) { } }
+                return !!popup;
+            }
+        };
+        // Bitácora en vivo: baja al final solo si el usuario ya estaba abajo (no le quita la posición si está leyendo).
+        window.backupLog = {
+            follow: function (el, force) {
+                if (!el) { return; }
+                var near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+                if (force || near || el.dataset.followed !== '1') {
+                    el.scrollTop = el.scrollHeight;
+                    el.dataset.followed = '1';
+                }
+            },
+            reveal: function (id) {
+                var el = document.getElementById(id);
+                if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+            }
+        };
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

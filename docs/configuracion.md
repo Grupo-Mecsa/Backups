@@ -47,6 +47,18 @@ Servidor de correo del operador. Se usa para **invitaciones y recuperación de c
 | `Smtp__FromAddress` | — | Remitente, p. ej. `respaldos@empresa.com`. Obligatorio. |
 | `Smtp__FromName` | `BackupHub` | Nombre visible del remitente. |
 
+## 🔑 Cuentas en la nube (OAuth) <sub>(opcional)</sub>
+
+Cliente OAuth predeterminado para el botón **Conectar con …** de Google Drive, OneDrive y Dropbox (ver [Nube](nube.md#conectar-cuentas-desde-la-web)). Si se configura, los usuarios solo eligen su cuenta; si no, cada conexión lleva su propio Client ID y secreto.
+
+| Variable | Descripción |
+|---|---|
+| `Backup__OAuth__Google__ClientId` / `Backup__OAuth__Google__ClientSecret` | ID de cliente de OAuth de Google (tipo *Aplicación web*). |
+| `Backup__OAuth__Microsoft__ClientId` / `Backup__OAuth__Microsoft__ClientSecret` | Aplicación de Entra ID para OneDrive. |
+| `Backup__OAuth__Dropbox__ClientId` / `Backup__OAuth__Dropbox__ClientSecret` | App key y app secret de Dropbox. |
+
+El URI de redireccionamiento que hay que registrar en cada servicio es `<Backup__PublicUrl>/oauth/callback`. Al conectar, el cliente se copia en la conexión (lo necesita para renovar el acceso): si cambias el secreto aquí, vuelve a conectar las cuentas.
+
 ## ✈️ Telegram <sub>(opcional)</sub>
 
 | Variable | Descripción |

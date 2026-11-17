@@ -86,9 +86,10 @@ flowchart LR
 
 | | Orígenes | Destinos | Restaurar en |
 |---|---|:---:|---|
-| 🗄️ **Bases de datos** | SQL Server · PostgreSQL · MySQL/MariaDB · MongoDB · SQLite | — | PostgreSQL · MySQL/MariaDB |
-| 📁 **Archivos** | Carpeta local · FTP/FTPS · SFTP · SMB | ✅ los mismos | Carpeta local · FTP/FTPS · SFTP · SMB |
-| ☁️ **Nube** | S3 y compatibles · Azure Blob | ✅ los mismos | (sus `.zip`, en los de archivos) |
+| 🗄️ **Bases de datos** | SQL Server · Azure SQL Database · PostgreSQL (Supabase, Neon, Azure) · MySQL/MariaDB (Azure) · MongoDB (Atlas) · SQLite | — | PostgreSQL y variantes · MySQL/MariaDB y Azure · Azure SQL (`.bacpac`) |
+| 📁 **Archivos** | Carpeta local · FTP/FTPS · SFTP · SMB · WebDAV/Nextcloud | ✅ los mismos | Los mismos |
+| ☁️ **Almacenamiento en la nube** | S3 · Cloudflare R2 · Backblaze B2 · Wasabi · Google Cloud Storage · DigitalOcean Spaces · Supabase Storage · MinIO · Azure Blob · Azure Files | ✅ los mismos | Azure Files (los demás, en los de archivos) |
+| 🗂️ **Unidades en la nube** | Google Drive · OneDrive/SharePoint · Dropbox | ✅ los mismos | Los mismos |
 
 ---
 
@@ -152,6 +153,7 @@ Los datos quedan en `src/Backup.Web/data/` salvo que definas `Backup__DataDirect
 | [🔑 Conexiones](docs/conexiones.md) | Datos de acceso reutilizables entre trabajos. |
 | [🗄️ Bases de datos](docs/bases-de-datos.md) | Elegir bases y esquemas, usuario de solo lectura, RLS y servicios gestionados. |
 | [📁 Proveedores de archivos](docs/proveedores-archivos.md) | Carpeta local, FTP/FTPS, SFTP y SMB: rutas, selección, codificación de nombres y problemas frecuentes. |
+| [☁️ Nube y unidades en la nube](docs/nube.md) | Servicios S3 compatibles, Azure Files, Google Drive, OneDrive/SharePoint, Dropbox y WebDAV: credenciales y tokens. |
 | [♻️ Revisar y restaurar](docs/restaurar.md) | Descargar, ver el contenido, restaurar desde la web o a mano. |
 | [🔔 Alertas](docs/alertas.md) | Correo, Telegram y webhook. |
 | [👥 Usuarios, roles y tenants](docs/usuarios-y-tenants.md) | Roles, registro, usuarios, tenants y recuperación de contraseña. |
@@ -170,6 +172,10 @@ Los datos quedan en `src/Backup.Web/data/` salvo que definas `Backup__DataDirect
 - [ ] Alerta cuando un trabajo programado no se ejecuta a tiempo
 
 ---
+
+## 🤝 Contribuir
+
+Las contribuciones son bienvenidas: lee la [guía de contribución](CONTRIBUTING.md) y el [código de conducta](CODE_OF_CONDUCT.md). Para reportar una vulnerabilidad, sigue la [política de seguridad](SECURITY.md) y no abras un issue público. Los cambios de cada versión están en el [CHANGELOG](CHANGELOG.md).
 
 ## 📄 Licencia
 

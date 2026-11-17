@@ -2,25 +2,14 @@
 @inject ToastService Toasts
 
 <div class="settings-form">
-    <div class="settings-form__header">
-        <span class="settings-form__icon"><Icon Name="@Provider.Descriptor.Icon" Size="20" /></span>
-        <div>
-            <h3 class="settings-form__title">@Provider.Descriptor.DisplayName</h3>
-            <p class="settings-form__desc">@Provider.Descriptor.Description</p>
-        </div>
-        @if (Provider is IConnectionTester && OnTestHandler is not null)
-        {
-            <Button Variant="ButtonVariant.Secondary" Icon="plug" Busy="_testing" OnClick="TestAsync" Class="settings-form__test">
-                Probar conexión
-            </Button>
-        }
-    </div>
-
-    @if (_testResult is not null)
+    @if (ShowHeader)
     {
-        <div class="callout callout--@(_testResult.Success ? "success" : "danger") animate-in" role="status">
-            <Icon Name="@(_testResult.Success ? "check" : "alert")" Size="16" />
-            <span>@_testResult.Message</span>
+        <div class="settings-form__header">
+            <span class="settings-form__icon"><Icon Name="@Provider.Descriptor.Icon" Size="20" /></span>
+            <div>
+                <h3 class="settings-form__title">@Provider.Descriptor.DisplayName</h3>
+                <p class="settings-form__desc">@Provider.Descriptor.Description</p>
+            </div>
         </div>
     }
 
@@ -29,8 +18,55 @@
         @ChildContent
     }
 
-    <div class="form-grid">
-        @foreach (var field in (Fields ?? Provider.Descriptor.Fields).Where(f => FieldFilter?.Invoke(f) ?? true))
+    @{
+        var visible = (Fields ?? Provider.Descriptor.Fields).Where(f => FieldFilter?.Invoke(f) ?? true).ToList();
+        var access = visible.Where(f => f.IsConnection).ToList();
+        var own = visible.Where(f => !f.IsConnection).ToList();
+        // Separar solo si hay de los dos tipos: los datos de acceso (reutilizables) y lo propio de este trabajo.
+        var grouped = access.Count > 0 && own.Count > 0;
+    }
+
+    @if (grouped)
+    {
+        <h4 class="settings-form__section">Conexión</h4>
+        @Grid(access)
+        <h4 class="settings-form__section">@OwnSectionTitle</h4>
+        @Grid(own)
+    }
+    else
+    {
+        @Grid(visible)
+    }
+
+    @if (Provider is IOAuthConnectable { OAuth: var oauth }
+         && visible.Any(f => f.Key == oauth.RefreshTokenKey)
+         && oauth.AppliesTo(new ProviderSettings(Binding.Settings)))
+    {
+        <OAuthConnect Spec="oauth" Binding="Binding" HasStoredToken="HasStoredSecret(oauth.RefreshTokenKey)" OnChanged="OnOAuthConnected" />
+    }
+
+    @if (Provider is IConnectionTester && OnTestHandler is not null)
+    {
+        <div class="settings-form__footer">
+            <Button Variant="ButtonVariant.Secondary" Icon="plug" Busy="_testing" OnClick="TestAsync">Probar conexión</Button>
+            @if (_testResult is not null)
+            {
+                <div class="callout callout--@(_testResult.Success ? "success" : "danger") animate-in" role="status">
+                    <Icon Name="@(_testResult.Success ? "check" : "alert")" Size="16" />
+                    <span>@_testResult.Message</span>
+                </div>
+            }
+            else
+            {
+                <span class="settings-form__test-hint">Comprueba el acceso con los datos de arriba antes de guardar.</span>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private RenderFragment Grid(IReadOnlyList<SettingField> fields) => @<div class="form-grid">
+        @foreach (var field in fields)
         {
             var id = $"{ErrorPrefix}-{field.Key}";
             var error = ErrorFor(field.Key);
@@ -90,8 +126,8 @@
                 }
             </FormField>
         }
-    </div>
-</div>
+    </div>;
+}
 
 @if (OnBrowseHandler is not null)
 {
@@ -116,6 +152,12 @@
     [Parameter, EditorRequired] public string ErrorPrefix { get; set; } = string.Empty;
 
     [Parameter] public IReadOnlyList<ValidationError> Errors { get; set; } = [];
+
+    /// <summary>Icono, nombre y descripción del proveedor. Se oculta cuando un <c>ProviderPicker</c> ya los muestra.</summary>
+    [Parameter] public bool ShowHeader { get; set; } = true;
+
+    /// <summary>Título de los campos propios (no reutilizables con la conexión).</summary>
+    [Parameter] public string OwnSectionTitle { get; set; } = "Para este trabajo";
     [Parameter] public Func<string, bool> HasStoredSecret { get; set; } = _ => false;
     [Parameter] public Func<Task<ConnectionTestResult>>? OnTestHandler { get; set; }
 
@@ -185,6 +227,12 @@
     private Task Set(string key, string? value)
     {
         Binding.Settings[key] = value;
+        _testResult = null;
+        return OnChanged.InvokeAsync();
+    }
+
+    private Task OnOAuthConnected()
+    {
         _testResult = null;
         return OnChanged.InvokeAsync();
     }

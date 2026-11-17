@@ -5,9 +5,13 @@ using Backup.Application.Providers;
 namespace Backup.Providers.Databases;
 
 /// <summary>Respaldo de PostgreSQL con pg_dump (la versión de pg_dump debe ser ≥ la del servidor).</summary>
-public sealed partial class PostgreSqlSource(IProcessRunner processes) : IBackupSource, IConnectionTester, IOptionLister, IRestoreTarget
+/// <param name="variant">Servicio PostgreSQL concreto (Supabase, Neon...); null = PostgreSQL genérico.</param>
+public sealed partial class PostgreSqlSource(IProcessRunner processes, ProviderVariant? variant = null)
+    : IBackupSource, IConnectionTester, IOptionLister, IRestoreTarget
 {
-    public ProviderDescriptor Descriptor { get; } = new(
+    public ProviderDescriptor Descriptor { get; } = variant is null ? BaseDescriptor : variant.Apply(BaseDescriptor);
+
+    private static readonly ProviderDescriptor BaseDescriptor = new(
         "postgres",
         "PostgreSQL",
         "Dump lógico con pg_dump. Compatible con servidores propios y servicios gestionados (RDS, Azure Database, Cloud SQL...).",
@@ -82,6 +86,11 @@ public sealed partial class PostgreSqlSource(IProcessRunner processes) : IBackup
     public IReadOnlyList<SettingField> RestoreFields =>
     [
         .. Descriptor.Fields.Where(f => f.IsConnection || f.Key == "database"),
+        .. RestoreOptions.Select(f => variant?.Customize is { } customize ? customize(f) : f).OfType<SettingField>(),
+    ];
+
+    private static readonly SettingField[] RestoreOptions =
+    [
         SettingField.Toggle("createDatabase", "Crear la base si no existe", true),
         SettingField.Toggle("recreateDatabase", "Borrar la base completa y crearla de nuevo", false,
             "Para copias de prueba: elimina la base destino con TODO su contenido (también lo que no está en el respaldo) y la crea vacía antes de restaurar. Nunca se aplica a la base «postgres»."),

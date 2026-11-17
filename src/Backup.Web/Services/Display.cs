@@ -55,7 +55,8 @@ public static class Display
     public static string Category(ProviderCategory category) => category switch
     {
         ProviderCategory.Database => "Bases de datos",
-        ProviderCategory.Cloud => "Nube",
+        ProviderCategory.Cloud => "Almacenamiento en la nube",
+        ProviderCategory.CloudDrive => "Unidades en la nube",
         ProviderCategory.FileTransfer => "Transferencia de archivos",
         _ => "Local",
     };

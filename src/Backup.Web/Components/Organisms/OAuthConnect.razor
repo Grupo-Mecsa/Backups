@@ -1,0 +1,290 @@
+@* «Conectar con Google/Microsoft/Dropbox»: autoriza la cuenta y deja el refresh token en el formulario del proveedor. *@
+@implements IDisposable
+@inject OAuthFlows Flows
+@inject CurrentUser User
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject ToastService Toasts
+
+<div class="oauth-connect">
+    <span class="oauth-connect__icon"><Icon Name="key" Size="18" /></span>
+    <div class="oauth-connect__text">
+        <strong>Cuenta de @Spec.Name</strong>
+        <span class="oauth-connect__status">
+            @if (_account is not null)
+            {
+                <span class="oauth-connect__ok"><Icon Name="check" Size="13" StrokeWidth="3" /> Conectada como @_account (falta guardar)</span>
+            }
+            else if (Connected)
+            {
+                <span class="oauth-connect__ok"><Icon Name="check" Size="13" StrokeWidth="3" /> Autorizada</span>
+            }
+            else
+            {
+                <span>Sin conectar: autoriza la cuenta donde se guardarán o de donde se leerán los archivos.</span>
+            }
+        </span>
+    </div>
+    <Button Variant="@(Connected ? ButtonVariant.Secondary : ButtonVariant.Primary)" Icon="@(Connected ? "refresh" : "plug")"
+            OnClick="OpenDialog" Class="oauth-connect__button">
+        @(Connected ? "Volver a conectar" : $"Conectar con {Spec.Name}")
+    </Button>
+</div>
+
+<ModalDialog Visible="_open" VisibleChanged="v => { if (!v) CloseDialog(); }" Title="@($"Conectar con {Spec.Name}")" Icon="key">
+    <ChildContent>
+        <div class="oauth-dialog">
+            @if (_clientError is not null)
+            {
+                <div class="callout callout--danger"><Icon Name="alert" Size="16" /> <span>@_clientError</span></div>
+            }
+            else
+            {
+                @if (!_manual && !RedirectAllowed)
+                {
+                    <div class="callout callout--warning">
+                        <Icon Name="alert" Size="16" />
+                        <span>
+                            @Spec.Name solo redirige a direcciones <b>https://</b> o a <b>localhost</b>, y BackupHub se está usando en
+                            <code>@CallbackUri</code>. Usa el modo manual o configura <code>Backup__PublicUrl</code> con una URL https.
+                        </span>
+                    </div>
+                }
+
+                <ol class="oauth-dialog__steps">
+                    <li>
+                        <span>
+                            @(Spec.SetupHelp ?? $"Registra en {Spec.Name} este URI de redireccionamiento")
+                            @if (DefaultClientConfigured && !OwnClient)
+                            {
+                                <em> (ya lo hizo el administrador si usa el cliente predeterminado)</em>
+                            }
+                        </span>
+                        <div class="oauth-dialog__uri">
+                            <code>@RedirectUri</code>
+                            <Button Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Icon="copy" IconOnly AriaLabel="Copiar" OnClick="CopyRedirect" />
+                        </div>
+                    </li>
+                    <li>
+                        <span>Pulsa <b>Abrir @Spec.Name</b>, elige la cuenta y acepta los permisos.</span>
+                        <div class="oauth-dialog__actions">
+                            <Button Icon="arrow-right" OnClick="Authorize" Disabled="@(!_manual && !RedirectAllowed)">Abrir @Spec.Name</Button>
+                            @if (_flow is not null && !_manual)
+                            {
+                                <span class="oauth-dialog__waiting"><Spinner /> Esperando la autorización...</span>
+                            }
+                        </div>
+                        @if (_popupBlocked && _flow is not null)
+                        {
+                            <p class="oauth-dialog__note">
+                                El navegador bloqueó la ventana emergente.
+                                <a href="@_flow.AuthorizeUrl" target="_blank" rel="noopener">Ábrela desde aquí</a>.
+                            </p>
+                        }
+                    </li>
+                    @if (_manual)
+                    {
+                        <li>
+                            <span>
+                                Al aceptar, el navegador irá a <code>http://localhost/?code=…</code> y mostrará un error de conexión: es lo esperado.
+                                Copia la dirección completa de esa pestaña y pégala aquí.
+                            </span>
+                            <TextInput Value="@_pasted" ValueChanged="v => _pasted = v" Immediate Mono Placeholder="http://localhost/?state=...&code=..." />
+                            <div class="oauth-dialog__actions">
+                                <Button Icon="check" Busy="_completing" Disabled="@(_flow is null || string.IsNullOrWhiteSpace(_pasted))" OnClick="CompleteManually">Completar</Button>
+                            </div>
+                        </li>
+                    }
+                </ol>
+
+                @if (_error is not null)
+                {
+                    <div class="callout callout--danger"><Icon Name="alert" Size="16" /> <span>@_error</span></div>
+                }
+
+                <p class="oauth-dialog__note">
+                    @if (_manual)
+                    {
+                        <span>Modo manual: registra también <code>@OAuthFlows.ManualRedirectUri</code> como URI de redireccionamiento. </span>
+                        <a href="" @onclick="() => SetManual(false)" @onclick:preventDefault>Volver al modo automático</a>
+                    }
+                    else
+                    {
+                        <span>¿Usas BackupHub por http:// o por IP? </span>
+                        <a href="" @onclick="() => SetManual(true)" @onclick:preventDefault>Usar el modo manual</a>
+                    }
+                </p>
+            }
+        </div>
+    </ChildContent>
+</ModalDialog>
+
+@code {
+    [Parameter, EditorRequired] public OAuthSpec Spec { get; set; } = default!;
+    [Parameter, EditorRequired] public ProviderBinding Binding { get; set; } = default!;
+
+    /// <summary>Si la conexión ya tiene un refresh token guardado (los secretos no vuelven al formulario).</summary>
+    [Parameter] public bool HasStoredToken { get; set; }
+
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private bool _open;
+    private bool _manual;
+    private bool _popupBlocked;
+    private bool _completing;
+    private string? _pasted;
+    private string? _error;
+    private string? _clientError;
+    private string? _account;
+    private OAuthFlow? _flow;
+    private CancellationTokenSource? _wait;
+
+    private bool Connected => HasStoredToken || !string.IsNullOrEmpty(Binding.Settings.GetValueOrDefault(Spec.RefreshTokenKey));
+    private bool OwnClient => !string.IsNullOrWhiteSpace(Binding.Settings.GetValueOrDefault(Spec.ClientIdKey));
+    private bool DefaultClientConfigured => Flows.DefaultClient(Spec).ClientId is not null;
+    private string CallbackUri => Flows.CallbackUri(Navigation.BaseUri);
+    private bool RedirectAllowed => OAuthFlows.IsRedirectAllowed(CallbackUri);
+    private string RedirectUri => _manual ? OAuthFlows.ManualRedirectUri : CallbackUri;
+
+    private void OpenDialog()
+    {
+        _error = null;
+        _clientError = !OwnClient && !DefaultClientConfigured
+            ? $"Primero escribe el Client ID (y el secreto) de tu aplicación de {Spec.Name}, o pide al administrador que configure Backup__OAuth__{Spec.ConfigSection}__ClientId."
+            : null;
+        _manual = !RedirectAllowed;
+        _open = true;
+    }
+
+    private void SetManual(bool manual)
+    {
+        ResetFlow();
+        _manual = manual;
+        _error = null;
+    }
+
+    private async Task Authorize()
+    {
+        ResetFlow();
+        _error = null;
+        _popupBlocked = false;
+        if (User.UserId is not { } userId)
+        {
+            _error = "La sesión expiró: vuelve a iniciar sesión.";
+            return;
+        }
+
+        try
+        {
+            _flow = Flows.Start(Spec, new ProviderSettings(Binding.Settings), userId, RedirectUri);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+            return;
+        }
+
+        _popupBlocked = !await JS.InvokeAsync<bool>("backupOAuth.open", _flow.AuthorizeUrl);
+        if (!_manual)
+        {
+            _ = WaitAsync(_flow);
+        }
+    }
+
+    /// <summary>Espera al callback en la ventana emergente (modo automático).</summary>
+    private async Task WaitAsync(OAuthFlow flow)
+    {
+        _wait = new CancellationTokenSource(TimeSpan.FromMinutes(15));
+        try
+        {
+            var result = await flow.Result.WaitAsync(_wait.Token);
+            await InvokeAsync(() => ApplyAsync(result));
+        }
+        catch (OperationCanceledException)
+        {
+            // Se cerró el diálogo o se reinició el flujo.
+        }
+        catch (Exception ex)
+        {
+            await InvokeAsync(() =>
+            {
+                if (ReferenceEquals(_flow, flow))
+                {
+                    _error = ex.Message;
+                    _flow = null;
+                    StateHasChanged();
+                }
+            });
+        }
+    }
+
+    private async Task CompleteManually()
+    {
+        if (_flow is null || User.UserId is not { } userId)
+        {
+            return;
+        }
+
+        _completing = true;
+        _error = null;
+        try
+        {
+            await ApplyAsync(await Flows.CompleteManuallyAsync(_flow, _pasted ?? string.Empty, userId, CancellationToken.None));
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException or HttpRequestException)
+        {
+            _error = ex.Message;
+            if (_flow is not null && ex.Message.Contains("caducó", StringComparison.Ordinal))
+            {
+                _flow = null;
+            }
+        }
+        finally
+        {
+            _completing = false;
+        }
+    }
+
+    private async Task ApplyAsync(OAuthResult result)
+    {
+        foreach (var (key, value) in result.Settings)
+        {
+            Binding.Settings[key] = value;
+        }
+
+        _account = result.Account ?? "la cuenta autorizada";
+        _flow = null;
+        _pasted = null;
+        _open = false;
+        Toasts.Success($"Cuenta de {Spec.Name} conectada", result.Account is null ? "Guarda para conservarla." : $"{result.Account}. Guarda para conservarla.");
+        await OnChanged.InvokeAsync();
+        StateHasChanged();
+    }
+
+    private async Task CopyRedirect()
+    {
+        if (await JS.InvokeAsync<bool>("backupClipboard.copy", RedirectUri))
+        {
+            Toasts.Success("Copiado", RedirectUri);
+        }
+    }
+
+    private void CloseDialog()
+    {
+        ResetFlow();
+        _open = false;
+    }
+
+    private void ResetFlow()
+    {
+        _wait?.Cancel();
+        _wait = null;
+        if (_flow is not null)
+        {
+            Flows.Cancel(_flow);
+            _flow = null;
+        }
+    }
+
+    public void Dispose() => ResetFlow();
+}

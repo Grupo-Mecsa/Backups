@@ -27,10 +27,12 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 ARG PG_MAJOR=17
 ARG INSTALL_MONGO_TOOLS=true
 ARG MONGO_TOOLS_VERSION=100.12.0
+# SqlPackage: exporta/importa .bacpac (origen «Azure SQL Database»). Solo hay binario para x64.
+ARG INSTALL_SQLPACKAGE=true
 
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends ca-certificates curl gnupg tzdata postgresql-common default-mysql-client; \
+    apt-get install -y --no-install-recommends ca-certificates curl gnupg unzip tzdata postgresql-common default-mysql-client; \
     /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y; \
     apt-get install -y --no-install-recommends "postgresql-client-${PG_MAJOR}"; \
     if [ "$INSTALL_MONGO_TOOLS" = "true" ]; then \
@@ -42,9 +44,15 @@ RUN set -eux; \
             apt-get install -y --no-install-recommends /tmp/mongo-tools.deb; rm /tmp/mongo-tools.deb; \
         else echo "AVISO: mongodump no disponible para ${distro}/${arch}; el origen MongoDB no funcionará."; fi; \
     fi; \
-    apt-get purge -y --auto-remove gnupg; \
+    if [ "$INSTALL_SQLPACKAGE" = "true" ]; then \
+        if [ "$(dpkg --print-architecture)" = "amd64" ] && curl -fsSL https://aka.ms/sqlpackage-linux -o /tmp/sqlpackage.zip; then \
+            mkdir -p /opt/sqlpackage; unzip -q /tmp/sqlpackage.zip -d /opt/sqlpackage; rm /tmp/sqlpackage.zip; \
+            chmod +x /opt/sqlpackage/sqlpackage; ln -s /opt/sqlpackage/sqlpackage /usr/local/bin/sqlpackage; \
+        else echo "AVISO: sqlpackage no disponible; el origen Azure SQL Database no funcionará."; fi; \
+    fi; \
+    apt-get purge -y --auto-remove gnupg unzip; \
     rm -rf /var/lib/apt/lists/*; \
-    pg_dump --version; mysqldump --version; command -v mongodump || true
+    pg_dump --version; mysqldump --version; command -v mongodump || true; command -v sqlpackage || true
 
 WORKDIR /app
 COPY --from=build /app .

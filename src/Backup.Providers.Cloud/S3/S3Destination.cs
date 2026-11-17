@@ -4,9 +4,12 @@ using Backup.Application.Providers;
 
 namespace Backup.Providers.Cloud.S3;
 
-public sealed class S3Destination : IBackupDestination, IConnectionTester, IFolderBrowser, IArtifactReader
+/// <param name="variant">Servicio compatible concreto (R2, B2...); null = S3 genérico.</param>
+public sealed class S3Destination(ProviderVariant? variant = null) : IBackupDestination, IConnectionTester, IFolderBrowser, IArtifactReader
 {
-    public ProviderDescriptor Descriptor { get; } = new(
+    public ProviderDescriptor Descriptor { get; } = variant is null ? BaseDescriptor : variant.Apply(BaseDescriptor);
+
+    private static readonly ProviderDescriptor BaseDescriptor = new(
         "s3",
         "Amazon S3 / compatible",
         "AWS S3, MinIO, Cloudflare R2, Wasabi, Backblaze B2 y cualquier servicio compatible con S3.",
@@ -16,6 +19,7 @@ public sealed class S3Destination : IBackupDestination, IConnectionTester, IFold
 
     public async Task DownloadAsync(DestinationContext context, string objectName, string localFile, CancellationToken cancellationToken)
     {
+        context = context with { Settings = Settings(context.Settings) };
         using var client = S3Connection.CreateClient(context.Settings);
         using var response = await client.GetObjectAsync(context.Settings.Require("bucket"), S3Connection.Key(context.Settings, objectName), cancellationToken);
         await response.WriteResponseStreamToFileAsync(localFile, append: false, cancellationToken);
@@ -23,6 +27,7 @@ public sealed class S3Destination : IBackupDestination, IConnectionTester, IFold
 
     public async Task UploadAsync(DestinationContext context, string localFile, string objectName, CancellationToken cancellationToken)
     {
+        context = context with { Settings = Settings(context.Settings) };
         using var client = S3Connection.CreateClient(context.Settings);
         if (context.Settings.GetBool("createBucket"))
         {
@@ -42,6 +47,7 @@ public sealed class S3Destination : IBackupDestination, IConnectionTester, IFold
 
     public async Task<IReadOnlyList<StoredBackup>> ListAsync(DestinationContext context, string folder, CancellationToken cancellationToken)
     {
+        context = context with { Settings = Settings(context.Settings) };
         using var client = S3Connection.CreateClient(context.Settings);
         var root = context.Settings.Get("prefix");
         var prefix = S3Connection.Key(context.Settings, folder).TrimEnd('/') + "/";
@@ -56,15 +62,18 @@ public sealed class S3Destination : IBackupDestination, IConnectionTester, IFold
 
     public async Task DeleteAsync(DestinationContext context, string objectName, CancellationToken cancellationToken)
     {
+        context = context with { Settings = Settings(context.Settings) };
         using var client = S3Connection.CreateClient(context.Settings);
         await client.DeleteObjectAsync(context.Settings.Require("bucket"), S3Connection.Key(context.Settings, objectName), cancellationToken);
     }
 
     public Task<FolderListing> BrowseAsync(ProviderSettings settings, string? path, CancellationToken cancellationToken) =>
-        S3Connection.BrowseAsync(settings, path, cancellationToken);
+        S3Connection.BrowseAsync(Settings(settings), path, cancellationToken);
 
     public Task<string> TestConnectionAsync(ProviderSettings settings, CancellationToken cancellationToken) =>
-        S3Connection.TestAsync(settings, cancellationToken);
+        S3Connection.TestAsync(Settings(settings), cancellationToken);
+
+    private ProviderSettings Settings(ProviderSettings settings) => variant?.Apply(settings) ?? settings;
 
     private static async Task EnsureBucketAsync(IAmazonS3 client, string bucket, CancellationToken cancellationToken)
     {

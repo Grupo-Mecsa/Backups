@@ -25,6 +25,17 @@ services:
       Smtp__FromName: ${SMTP_FROM_NAME:-BackupHub}
       # Bot de Telegram para alertas (token de @BotFather; opcional)
       Telegram__BotToken: ${TELEGRAM_BOT_TOKEN:-}
+      # Cliente OAuth para «Conectar con Google/Microsoft/Dropbox» (opcional; redirección: <PublicUrl>/oauth/callback)
+      Backup__OAuth__Google__ClientId: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      Backup__OAuth__Google__ClientSecret: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      Backup__OAuth__Microsoft__ClientId: ${MICROSOFT_OAUTH_CLIENT_ID:-}
+      Backup__OAuth__Microsoft__ClientSecret: ${MICROSOFT_OAUTH_CLIENT_SECRET:-}
+      Backup__OAuth__Dropbox__ClientId: ${DROPBOX_APP_KEY:-}
+      Backup__OAuth__Dropbox__ClientSecret: ${DROPBOX_APP_SECRET:-}
+      # WhatsApp vía WAHA (opcional): URL, WAHA_API_KEY de la instancia y sesión desde la que se envía
+      WhatsApp__BaseUrl: ${WHATSAPP_BASE_URL:-}
+      WhatsApp__ApiKey: ${WHATSAPP_API_KEY:-}
+      WhatsApp__Session: ${WHATSAPP_SESSION:-default}
       # Autorregistro: Enabled (el primer usuario de una organización se aprueba solo; unirse a una existente requiere aprobación) | Disabled
       Registration__Mode: ${BACKUP_REGISTRATION:-Enabled}
       Notifications__Webhook__Url: ""       # Teams / Slack / n8n (opcional)

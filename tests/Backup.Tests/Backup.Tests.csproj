@@ -25,6 +25,7 @@
     <ProjectReference Include="..\..\src\Backup.Providers.Cloud\Backup.Providers.Cloud.csproj" />
     <ProjectReference Include="..\..\src\Backup.Providers.Files\Backup.Providers.Files.csproj" />
     <ProjectReference Include="..\..\src\Backup.Infrastructure\Backup.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Backup.Web\Backup.Web.csproj" />
   </ItemGroup>
 
 </Project>

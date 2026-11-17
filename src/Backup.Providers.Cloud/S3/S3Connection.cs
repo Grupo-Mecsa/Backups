@@ -37,6 +37,11 @@ internal static class S3Connection
         {
             config.ServiceURL = serviceUrl;
             config.AuthenticationRegion = settings.Get("region", "us-east-1");
+
+            // Los servicios compatibles (GCS, B2, Supabase...) no siempre aceptan las sumas de verificación que el SDK
+            // agrega por defecto desde la v4: solo se envían cuando la operación las exige.
+            config.RequestChecksumCalculation = RequestChecksumCalculation.WHEN_REQUIRED;
+            config.ResponseChecksumValidation = ResponseChecksumValidation.WHEN_REQUIRED;
         }
         else
         {
